@@ -1,0 +1,99 @@
+       {
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "vnetName": {
+            "defaultValue": "vnet",
+            "type": "string",
+            "metadata": {
+                "description": "Name for the virtual network"
+            }
+        },
+        "addressPrefix": {
+            "defaultValue": "10.0.0.0/16",
+            "type": "string",
+            "metadata": {
+                "description": "address range for the virtual network in CIDR notation"
+            }        },
+        "DBSubnetName": {
+            "defaultValue": "dbsubnet",
+            "type": "string",
+            "metadata": {
+                "description": "subnet name for database tier"
+            }
+        },
+        "DBSubnetPrefix": {
+            "defaultValue": "10.0.0.0/24",
+            "type": "string",
+            "metadata": {
+                "description": "subnet address range for database tier in CIDR notation"
+            }            
+        },
+        "AppSubnetName": {
+            "defaultValue": "appsubnet",
+            "type": "string",
+            "metadata": {
+                "description": "subnet name for app tier"
+            }            
+        },
+        "AppSubnetPrefix": {
+            "defaultValue": "10.0.1.0/24",
+            "type": "string",
+            "metadata": {
+                "description": "subnet address range for app tier in CIDR notation"
+            }            
+        },
+        "MgtSubnetName": {
+            "defaultValue": "mgtsubnet",
+            "type": "string",
+            "metadata": {
+                "description": "subnet name for shared services tier"
+            }            
+        },
+        "MgtSubnetPrefix": {
+            "defaultValue": "10.0.2.0/24",
+            "type": "string",
+            "metadata": {
+                "description": "subnet address range for shared services tier in CIDR notation"
+            }            
+        }
+    },
+    "variables": {
+
+    },
+    "resources":   [{
+            "type": "Microsoft.Network/virtualNetworks",
+            "name": "[parameters('vnetName')]",
+            "apiVersion": "2015-06-15",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[parameters('addressPrefix')]"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "[parameters('DBSubnetName')]",
+                        "properties": {
+                            "addressPrefix": "[parameters('DBSubnetPrefix')]"
+                        }
+                    },
+                    {
+                        "name": "[parameters('AppSubnetName')]",
+                        "properties": {
+                            "addressPrefix": "[parameters('AppSubnetPrefix')]"
+                        }
+                    },
+                    {
+                        "name": "[parameters('MgtSubnetName')]",
+                        "properties": {
+                            "addressPrefix": "[parameters('MgtSubnetPrefix')]"
+                        }
+                    }                    
+                ]
+            }
+        }
+    ]
+}
+    
