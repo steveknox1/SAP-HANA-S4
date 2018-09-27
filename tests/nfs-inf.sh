@@ -3,8 +3,6 @@
 echo "Reading config...." >&2
 source ./azuredeploy.cfg
 
-az account set --subscription $subscriptionid
-
 echo "creating nfs cluster"
 az group deployment create \
 --name NFSDeployment \
@@ -13,14 +11,16 @@ az group deployment create \
    --parameters prefix=nfs \
    VMName1=$NFSVMNAME1 \
    VMName2=$NFSVMNAME2 \
-   VMSize="Standard_D2s_v3" \
+   VMSize="Standard_D4s_v3" \
    vnetName=$vnetname \
    SubnetName=$appsubnetname \
-   VMUserName="testuser" \
+   VMUserName=$vmusername \
    VMPassword=$vmpassword \
-   OperatingSystem="SLES for SAP 12 SP2" \
+   OperatingSystem="SLES for SAP 12 SP3" \
    ExistingNetworkResourceGroup=$rgname \
    StaticIP1=$NFSIP1 \
    StaticIP2=$NFSIP2 \
    iSCSIIP=$ISCSIIP \
    ILBIP=$NFSILBIP
+
+echo "nfs cluster created"

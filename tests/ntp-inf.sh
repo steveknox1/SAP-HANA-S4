@@ -3,14 +3,12 @@
 echo "Reading config...." >&2
 source ./azuredeploy.cfg
 
-az account set --subscription $subscriptionid
-
 echo "creating ntp server"
 az group deployment create \
 --name NTPDeployment \
 --resource-group $rgname \
 --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/Hana-Test-Deploy/master/sap-ntp-server/ntpserver-infra.json" \
---parameters vmUserName=testuser \
+--parameters vmUserName=$vmusername \
              ExistingNetworkResourceGroup=$rgname \
              vnetName=$vnetname \
              subnetName=$mgtsubnetname \
@@ -18,3 +16,5 @@ az group deployment create \
              vmPassword=$vmpassword \
              customUri=$customuri \
                    StaticIP=$NTPIP
+
+echo "ntp server created"

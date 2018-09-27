@@ -8,47 +8,36 @@ ELEMENTS=${#args[@]}
 # echo each element in array
 # for loop
 for (( i=0;i<$ELEMENTS;i++)); do
-    echo ${args[${i}]}
+    echo "ARG[${i}]: ${args[${i}]}"
 done
 
-URI=$1
-shift
-HANAUSR=$1
-shift
-HANAPWD=$1
-shift
-HANASID=$1
-shift
-HANANUMBER=$1
-shift
-VMNAME=$1
-shift
-OTHERVMNAME=$1
-shift
-VMIPADDR=$1
-shift
-OTHERIPADDR=$1
-shift
-CONFIGHSR=$1
-shift
-ISPRIMARY=$1
-shift
-REPOURI=$1
-shift
-ISCSIIP=$1
-shift
-IQN=$1
-shift
-IQNCLIENT=$1
-shift
-LBIP=$1
-shift
-SUBEMAIL=$1
-shift
-SUBID=$1
-shift
-SUBURL=$1
+URI=${1}
+HANAUSR=${2}
+HANAPWD=${3}
+HANASID=${4}
+HANANUMBER=${5}
+VMNAME=${6}
+OTHERVMNAME=${7}
+VMIPADDR=${8}
+OTHERIPADDR=${9}
+CONFIGHSR=${10}
+ISPRIMARY=${11}
+REPOURI=${12}
+ISCSIIP=${13}
+IQN=${14}
+IQNCLIENT=${15}
+LBIP=${16}
+SUBEMAIL=${17}
+SUBID=${18}
+SUBURL=${19}
+NFSIP=${20}
 
+###
+# cluster tuning values
+WATCHDOGTIMEOUT="30"
+MSGWAITTIMEOUT="60"
+STONITHTIMEOUT="150s"
+###
 #get the VM size via the instance api
 VMSIZE=`curl -H Metadata:true "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2017-08-01&format=text"`
 
@@ -104,6 +93,43 @@ retry() {
 
 declare -fxr retry
 
+waitfor() {
+P_USER=$1
+P_HOST=$2
+P_FILESPEC=$3
+
+RESULT=1
+while [ $RESULT = 1 ]
+do
+    sleep 1
+    ssh -q -n -o BatchMode=yes -o StrictHostKeyChecking=no "$P_USER@$P_HOST" "test -e $P_FILESPEC"
+    RESULT=$?
+    if [ "$RESULT" = "255" ]; then
+        (>&2 echo "waitfor failed in ssh")
+        return 255
+    fi
+done
+return 0
+}
+
+declare -fxr waitfor
+
+download_if_needed() {
+  P_DESTDIR=${1}
+  P_SOURCEDIR=${2}
+  P_FILENAME=${3}
+
+  DESTFILE="$P_DESTDIR/$P_FILENAME"
+  SOURCEFILE="$P_SOURCEDIR/$P_FILENAME"
+  test -e $DESTFILE
+  RESULT=$?
+  if [ "$RESULT" = "1" ]; then
+    #need to download the file
+    retry 5 "wget --quiet -O $DESTFILE $SOURCEFILE"
+  fi
+}
+
+declare -fxr download_if_needed
 
 ##bash function definitions
 
@@ -182,8 +208,8 @@ quorum {
         # Enable and configure quorum subsystem (default: off)
         # see also corosync.conf.5 and votequorum.5
         provider: corosync_votequorum
-        expected_votes: 1
-        two_node: 0
+        expected_votes: 2
+        two_node: 1
 }
 EOF
 
@@ -200,10 +226,10 @@ setup_cluster() {
   if [ "$ISPRIMARY" = "yes" ]; then
     ha-cluster-init -y -q csync2
     ha-cluster-init -y -q -u corosync
-    ha-cluster-init -y -q sbd -d $SBDID
+    ha-cluster-init -y -q -s $SBDID sbd 
     ha-cluster-init -y -q cluster name=$CLUSTERNAME interface=eth0
     touch /tmp/corosyncconfig1.txt	
-    /root/waitfor.sh root $OTHERVMNAME /tmp/corosyncconfig2.txt	
+    waitfor root $OTHERVMNAME /tmp/corosyncconfig2.txt	
     systemctl stop corosync
     systemctl stop pacemaker
     write_corosync_config 10.0.5.0 $VMNAME $OTHERVMNAME
@@ -213,14 +239,14 @@ setup_cluster() {
 
     sleep 10
   else
-    /root/waitfor.sh root $OTHERVMNAME /tmp/corosyncconfig1.txt	
+    waitfor root $OTHERVMNAME /tmp/corosyncconfig1.txt	
     ha-cluster-join -y -q -c $OTHERVMNAME csync2 
     ha-cluster-join -y -q ssh_merge
     ha-cluster-join -y -q cluster
     systemctl stop corosync
     systemctl stop pacemaker
     touch /tmp/corosyncconfig2.txt	
-    /root/waitfor.sh root $OTHERVMNAME /tmp/corosyncconfig3.txt	
+    waitfor root $OTHERVMNAME /tmp/corosyncconfig3.txt	
     write_corosync_config 10.0.5.0 $OTHERVMNAME $VMNAME 
     systemctl restart corosync
     systemctl start pacemaker
@@ -232,10 +258,6 @@ setup_cluster() {
 
 register_subscription "$SUBEMAIL"  "$SUBID" "$SUBURL"
 
-
-cp waitfor.sh /root
-chmod u+x /root/waitfor.sh
-
 mkdir /etc/systemd/login.conf.d
 mkdir /hana
 mkdir /hana/data
@@ -244,163 +266,249 @@ mkdir /hana/shared
 mkdir /hana/backup
 mkdir /usr/sap
 
+# this assumes that 5 disks are attached at lun 0 through 4
+echo "Creating partitions and physical volumes"
+pvcreate -ff -y /dev/disk/azure/scsi1/lun0   
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun1
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun2
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun3
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun4
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun5
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun6
+pvcreate -ff -y  /dev/disk/azure/scsi1/lun7
 
-number="$(lsscsi [*] 0 0 4| cut -c2)"
-if [ $VMSIZE == "Standard_E16s_v3" ] || [ "$VMSIZE" == "Standard_E32s_v3" ] || [ "$VMSIZE" == "Standard_E64s_v3" ] || [ "$VMSIZE" == "Standard_GS5" ] ; then
+if [ $VMSIZE == "Standard_E16s_v3" ] || [ "$VMSIZE" == "Standard_E32s_v3" ] || [ "$VMSIZE" == "Standard_E64s_v3" ] || [ "$VMSIZE" == "Standard_GS5" ] || [ "$VMSIZE" == "Standard_M32ts" ] || [ "$VMSIZE" == "Standard_M32ls" ] || [ "$VMSIZE" == "Standard_M64ls" ] || [ $VMSIZE == "Standard_DS14_v2" ] ; then
 echo "logicalvols start" >> /tmp/parameter.txt
-  hanavg1lun="$(lsscsi $number 0 0 3 | grep -o '.\{9\}$')"
-  hanavg2lun="$(lsscsi $number 0 0 4 | grep -o '.\{9\}$')"
-  pvcreate -ff -y $hanavg1lun $hanavg2lun
-  vgcreate hanavg $hanavg1lun $hanavg2lun
-  lvcreate -W y  -l 80%FREE -n datalv hanavg
-  lvcreate -W y  -l 20%VG -n loglv hanavg
-  mkfs.xfs /dev/hanavg/datalv
-  mkfs.xfs /dev/hanavg/loglv
-echo "logicalvols end" >> /tmp/parameter.txt
-
-#!/bin/bash
-echo "logicalvols2 start" >> /tmp/parameter.txt
-  sharedvglun="$(lsscsi $number 0 0 0 | grep -o '.\{9\}$')"
-  usrsapvglun="$(lsscsi $number 0 0 1 | grep -o '.\{9\}$')"
-  backupvglun="$(lsscsi $number 0 0 2 | grep -o '.\{9\}$')"
-  pvcreate -y -ff $backupvglun $sharedvglun $usrsapvglun
-  vgcreate backupvg $backupvglun
+#shared volume creation
+  sharedvglun="/dev/disk/azure/scsi1/lun0"
   vgcreate sharedvg $sharedvglun
-  vgcreate usrsapvg $usrsapvglun 
-  lvcreate -W y  -l 100%FREE -n sharedlv sharedvg 
-  lvcreate -W y  -l 100%FREE -n backuplv backupvg 
-  lvcreate -W y  -l 100%FREE -n usrsaplv usrsapvg 
+  lvcreate -l 100%FREE -n sharedlv sharedvg 
+ 
+#usr volume creation
+  usrsapvglun="/dev/disk/azure/scsi1/lun1"
+  vgcreate usrsapvg $usrsapvglun
+  lvcreate -l 100%FREE -n usrsaplv usrsapvg
+
+#backup volume creation
+  backupvglun="/dev/disk/azure/scsi1/lun2"
+  vgcreate backupvg $backupvglun
+  lvcreate -l 100%FREE -n backuplv backupvg 
+
+#data volume creation
+  datavg1lun="/dev/disk/azure/scsi1/lun3"
+  datavg2lun="/dev/disk/azure/scsi1/lun4"
+  datavg3lun="/dev/disk/azure/scsi1/lun5"
+  vgcreate datavg $datavg1lun $datavg2lun $datavg3lun
+  PHYSVOLUMES=3
+  STRIPESIZE=64
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n datalv datavg
+
+#log volume creation
+  logvg1lun="/dev/disk/azure/scsi1/lun6"
+  logvg2lun="/dev/disk/azure/scsi1/lun7"
+  vgcreate logvg $logvg1lun $logvg2lun
+  PHYSVOLUMES=2
+  STRIPESIZE=32
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n loglv logvg
+
+  mkfs.xfs /dev/datavg/datalv
+  mkfs.xfs /dev/logvg/loglv
   mkfs -t xfs /dev/sharedvg/sharedlv 
   mkfs -t xfs /dev/backupvg/backuplv 
   mkfs -t xfs /dev/usrsapvg/usrsaplv
-echo "logicalvols2 end" >> /tmp/parameter.txt
+echo "logicalvols end" >> /tmp/parameter.txt
 fi
 
 if [ $VMSIZE == "Standard_M64s" ]; then
+
+# this assumes that 6 disks are attached at lun 0 through 5
+echo "Creating partitions and physical volumes"
+pvcreate -ff -y /dev/disk/azure/scsi1/lun8
+pvcreate -ff -y /dev/disk/azure/scsi1/lun9
+
 echo "logicalvols start" >> /tmp/parameter.txt
-  hanavg1lun="$(lsscsi $number 0 0 4 | grep -o '.\{9\}$')"
-  hanavg2lun="$(lsscsi $number 0 0 5 | grep -o '.\{9\}$')"
-  pvcreate -y -ff hanavg $hanavg1lun $hanavg2lun
-  vgcreate hanavg $hanavg1lun $hanavg2lun
-  lvcreate -W y  -l 80%FREE -n datalv hanavg
-  lvcreate -W y  -l 20%VG -n loglv hanavg
-  mkfs.xfs /dev/hanavg/datalv
-  mkfs.xfs /dev/hanavg/loglv
-echo "logicalvols end" >> /tmp/parameter.txt
-
-
-#!/bin/bash
-echo "logicalvols2 start" >> /tmp/parameter.txt
-  sharedvglun="$(lsscsi $number 0 0 0 | grep -o '.\{9\}$')"
-  usrsapvglun="$(lsscsi $number 0 0 1 | grep -o '.\{9\}$')"
-  backupvglun1="$(lsscsi $number 0 0 2 | grep -o '.\{9\}$')"
-  backupvglun2="$(lsscsi $number 0 0 3 | grep -o '.\{9\}$')"
-  pvcreate -y -ff $backupvglun1 $backupvglun2 $sharedvglun $usrsapvglun
-  vgcreate backupvg $backupvglun1 $backupvglun2
+#shared volume creation
+  sharedvglun="/dev/disk/azure/scsi1/lun0"
   vgcreate sharedvg $sharedvglun
-  vgcreate usrsapvg $usrsapvglun 
-  lvcreate -W y  -l 100%FREE -n sharedlv sharedvg 
-  lvcreate -W y  -l 100%FREE -n backuplv backupvg 
-  lvcreate -W y  -l 100%FREE -n usrsaplv usrsapvg 
+  lvcreate -l 100%FREE -n sharedlv sharedvg 
+ 
+#usr volume creation
+  usrsapvglun="/dev/disk/azure/scsi1/lun1"
+  vgcreate usrsapvg $usrsapvglun
+  lvcreate -l 100%FREE -n usrsaplv usrsapvg
+
+#backup volume creation
+  backupvg1lun="/dev/disk/azure/scsi1/lun2"
+  backupvg2lun="/dev/disk/azure/scsi1/lun3"
+  vgcreate backupvg $backupvg1lun $backupvg2lun
+  lvcreate -l 100%FREE -n backuplv backupvg 
+
+#data volume creation
+  datavg1lun="/dev/disk/azure/scsi1/lun4"
+  datavg2lun="/dev/disk/azure/scsi1/lun5"
+  datavg3lun="/dev/disk/azure/scsi1/lun6"
+  datavg4lun="/dev/disk/azure/scsi1/lun7"
+  vgcreate datavg $datavg1lun $datavg2lun $datavg3lun $datavg4lun
+  PHYSVOLUMES=4
+  STRIPESIZE=64
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n datalv datavg
+
+#log volume creation
+  logvg1lun="/dev/disk/azure/scsi1/lun8"
+  logvg2lun="/dev/disk/azure/scsi1/lun9"
+  vgcreate logvg $logvg1lun $logvg2lun
+  PHYSVOLUMES=2
+  STRIPESIZE=32
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n loglv logvg
+
+
+  mkfs.xfs /dev/datavg/datalv
+  mkfs.xfs /dev/logvg/loglv
   mkfs -t xfs /dev/sharedvg/sharedlv 
   mkfs -t xfs /dev/backupvg/backuplv 
   mkfs -t xfs /dev/usrsapvg/usrsaplv
-echo "logicalvols2 end" >> /tmp/parameter.txt
+echo "logicalvols end" >> /tmp/parameter.txt
 fi
 
 if [ $VMSIZE == "Standard_M64ms" ] || [ $VMSIZE == "Standard_M128s" ]; then
+
+# this assumes that 6 disks are attached at lun 0 through 9
+echo "Creating partitions and physical volumes"
+pvcreate  -ff -y /dev/disk/azure/scsi1/lun8
+
 echo "logicalvols start" >> /tmp/parameter.txt
-  hanavg1lun="$(lsscsi $number 0 0 4 | grep -o '.\{9\}$')"
-  hanavg2lun="$(lsscsi $number 0 0 5 | grep -o '.\{9\}$')"
-  hanavg3lun="$(lsscsi $number 0 0 6 | grep -o '.\{9\}$')"
-  pvcreate $hanavg1lun $hanavg2lun $hanavg3lun
-  vgcreate hanavg $hanavg1lun $hanavg2lun $hanavg3lun
-  lvcreate -W y  -l 80%FREE -n datalv hanavg
-  lvcreate -W y  -l 20%VG -n loglv hanavg
-  mkfs.xfs /dev/hanavg/datalv
-  mkfs.xfs /dev/hanavg/loglv
-echo "logicalvols end" >> /tmp/parameter.txt
-
-
-#!/bin/bash
-echo "logicalvols2 start" >> /tmp/parameter.txt
-  sharedvglun="$(lsscsi $number 0 0 0 | grep -o '.\{9\}$')"
-  usrsapvglun="$(lsscsi $number 0 0 1 | grep -o '.\{9\}$')"
-  backupvglun1="$(lsscsi $number 0 0 2 | grep -o '.\{9\}$')"
-  backupvglun2="$(lsscsi $number 0 0 3 | grep -o '.\{9\}$')"
-  pvcreate -y -ff $backupvglun1 $backupvglun2 $sharedvglun $usrsapvglun
-  vgcreate backupvg $backupvglun1 $backupvglun2
+#shared volume creation
+  sharedvglun="/dev/disk/azure/scsi1/lun0"
   vgcreate sharedvg $sharedvglun
+  lvcreate -l 100%FREE -n sharedlv sharedvg 
+ 
+#usr volume creation
+  usrsapvglun="/dev/disk/azure/scsi1/lun1"
   vgcreate usrsapvg $usrsapvglun
-  lvcreate -W y  -l 100%FREE -n sharedlv sharedvg 
-  lvcreate -W y  -l 100%FREE -n backuplv backupvg 
-  lvcreate -W y  -l 100%FREE -n usrsaplv usrsapvg 
+  lvcreate -l 100%FREE -n usrsaplv usrsapvg
+
+#backup volume creation
+  backupvg1lun="/dev/disk/azure/scsi1/lun2"
+  backupvg2lun="/dev/disk/azure/scsi1/lun3"
+  vgcreate backupvg $backupvg1lun $backupvg2lun
+  lvcreate -l 100%FREE -n backuplv backupvg 
+
+#data volume creation
+  datavg1lun="/dev/disk/azure/scsi1/lun4"
+  datavg2lun="/dev/disk/azure/scsi1/lun5"
+  datavg3lun="/dev/disk/azure/scsi1/lun6"
+  vgcreate datavg $datavg1lun $datavg2lun $datavg3lun 
+  PHYSVOLUMES=3
+  STRIPESIZE=64
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n datalv datavg
+
+#log volume creation
+  logvg1lun="/dev/disk/azure/scsi1/lun7"
+  logvg2lun="/dev/disk/azure/scsi1/lun8"
+  vgcreate logvg $logvg1lun $logvg2lun
+  PHYSVOLUMES=2
+  STRIPESIZE=32
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n loglv logvg
+
+
+  mkfs.xfs /dev/datavg/datalv
+  mkfs.xfs /dev/logvg/loglv
   mkfs -t xfs /dev/sharedvg/sharedlv 
   mkfs -t xfs /dev/backupvg/backuplv 
   mkfs -t xfs /dev/usrsapvg/usrsaplv
-echo "logicalvols2 end" >> /tmp/parameter.txt
+echo "logicalvols end" >> /tmp/parameter.txt
 fi
 
 if [ $VMSIZE == "Standard_M128ms" ]; then
+
+# this assumes that 6 disks are attached at lun 0 through 5
+echo "Creating partitions and physical volumes"
+pvcreate  -ff -y /dev/disk/azure/scsi1/lun8
+pvcreate  -ff -y /dev/disk/azure/scsi1/lun9
+pvcreate  -ff -y /dev/disk/azure/scsi1/lun10
+
 echo "logicalvols start" >> /tmp/parameter.txt
-  hanavg1lun="$(lsscsi $number 0 0 7 | grep -o '.\{9\}$')"
-  hanavg2lun="$(lsscsi $number 0 0 8 | grep -o '.\{9\}$')"
-  hanavg3lun="$(lsscsi $number 0 0 9 | grep -o '.\{9\}$')"
-  hanavg4lun="$(lsscsi $number 0 0 10 | grep -o '.\{9\}$')"
-  hanavg5lun="$(lsscsi $number 0 0 11 | grep -o '.\{9\}$')"
-  pvcreate -y -ff $hanavg1lun $hanavg2lun $hanavg3lun $hanavg4lun $hanavg5lun
-  vgcreate hanavg $hanavg1lun $hanavg2lun $hanavg3lun $hanavg4lun $hanavg5lun
-  lvcreate -W y  -l 80%FREE -n datalv hanavg
-  lvcreate -W y  -l 20%VG -n loglv hanavg
-  mkfs.xfs /dev/hanavg/datalv
-  mkfs.xfs /dev/hanavg/loglv
-echo "logicalvols end" >> /tmp/parameter.txt
-
-
-#!/bin/bash
-echo "logicalvols2 start" >> /tmp/parameter.txt
-  sharedvglun="$(lsscsi $number 0 0 0 | grep -o '.\{9\}$')"
-  usrsapvglun="$(lsscsi $number 0 0 1 | grep -o '.\{9\}$')"
-  backupvglun1="$(lsscsi $number 0 0 2 | grep -o '.\{9\}$')"
-  backupvglun2="$(lsscsi $number 0 0 3 | grep -o '.\{9\}$')"
-  backupvglun3="$(lsscsi $number 0 0 4 | grep -o '.\{9\}$')"
-  backupvglun4="$(lsscsi $number 0 0 5 | grep -o '.\{9\}$')"
-  backupvglun5="$(lsscsi $number 0 0 6 | grep -o '.\{9\}$')"
-  pvcreate -y -ff $backupvglun1 $backupvglun2 $backupvglun3 $backupvglun4 $backupvglun5 $sharedvglun $usrsapvglun
-  vgcreate backupvg $backupvglun1 $backupvglun2 $backupvglun3 $backupvglun4 $backupvglun5
+#shared volume creation
+  sharedvglun="/dev/disk/azure/scsi1/lun0"
   vgcreate sharedvg $sharedvglun
+  lvcreate -l 100%FREE -n sharedlv sharedvg 
+ 
+#usr volume creation
+  usrsapvglun="/dev/disk/azure/scsi1/lun1"
   vgcreate usrsapvg $usrsapvglun
-  lvcreate -W y  -l 100%FREE -n sharedlv sharedvg 
-  lvcreate -W y  -l 100%FREE -n backuplv backupvg 
-  lvcreate -W y  -l 100%FREE -n usrsaplv usrsapvg 
+  lvcreate -l 100%FREE -n usrsaplv usrsapvg
+
+#backup volume creation
+  backupvg1lun="/dev/disk/azure/scsi1/lun2"
+  backupvg2lun="/dev/disk/azure/scsi1/lun3"
+  vgcreate backupvg $backupvg1lun $backupvg2lun
+  lvcreate -l 100%FREE -n backuplv backupvg 
+
+#data volume creation
+  datavg1lun="/dev/disk/azure/scsi1/lun4"
+  datavg2lun="/dev/disk/azure/scsi1/lun5"
+  datavg3lun="/dev/disk/azure/scsi1/lun6"
+  datavg4lun="/dev/disk/azure/scsi1/lun7"
+  datavg5lun="/dev/disk/azure/scsi1/lun8"
+  vgcreate datavg $datavg1lun $datavg2lun $datavg3lun $datavg4lun $datavg5lun
+  PHYSVOLUMES=4
+  STRIPESIZE=64
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n datalv datavg
+
+#log volume creation
+  logvg1lun="/dev/disk/azure/scsi1/lun9"
+  logvg2lun="/dev/disk/azure/scsi1/lun10"
+  vgcreate logvg $logvg1lun $logvg2lun
+  PHYSVOLUMES=2
+  STRIPESIZE=32
+  lvcreate -i$PHYSVOLUMES -I$STRIPESIZE -l 100%FREE -n loglv logvg
+
+  mkfs.xfs /dev/datavg/datalv
+  mkfs.xfs /dev/logvg/loglv
   mkfs -t xfs /dev/sharedvg/sharedlv 
   mkfs -t xfs /dev/backupvg/backuplv 
   mkfs -t xfs /dev/usrsapvg/usrsaplv
-echo "logicalvols2 end" >> /tmp/parameter.txt
 fi
 #!/bin/bash
 echo "mounthanashared start" >> /tmp/parameter.txt
 mount -t xfs /dev/sharedvg/sharedlv /hana/shared
 mount -t xfs /dev/backupvg/backuplv /hana/backup 
 mount -t xfs /dev/usrsapvg/usrsaplv /usr/sap
-mount -t xfs /dev/hanavg/datalv /hana/data
-mount -t xfs /dev/hanavg/loglv /hana/log 
-mkdir /hana/data/sapbits
+mount -t xfs /dev/datavg/datalv /hana/data
+mount -t xfs /dev/logvg/loglv /hana/log 
 echo "mounthanashared end" >> /tmp/parameter.txt
 
 echo "write to fstab start" >> /tmp/parameter.txt
-echo "/dev/mapper/hanavg-datalv /hana/data xfs defaults 0 0" >> /etc/fstab
-echo "/dev/mapper/hanavg-loglv /hana/log xfs defaults 0 0" >> /etc/fstab
+echo "/dev/mapper/datavg-datalv /hana/data xfs defaults 0 0" >> /etc/fstab
+echo "/dev/mapper/logvg-loglv /hana/log xfs defaults 0 0" >> /etc/fstab
 echo "/dev/mapper/sharedvg-sharedlv /hana/shared xfs defaults 0 0" >> /etc/fstab
 echo "/dev/mapper/backupvg-backuplv /hana/backup xfs defaults 0 0" >> /etc/fstab
 echo "/dev/mapper/usrsapvg-usrsaplv /usr/sap xfs defaults 0 0" >> /etc/fstab
 echo "write to fstab end" >> /tmp/parameter.txt
 
-if [ ! -d "/hana/data/sapbits" ]
- then
- mkdir "/hana/data/sapbits"
+cat >>/etc/hosts <<EOF
+$VMIPADDR $VMNAME
+$OTHERIPADDR $OTHERVMNAME
+EOF
+
+if [ "$NFSIP" != "" ]; then
+cat >>/etc/hosts <<EOF
+$NFSIP nfsnfslb
+EOF
+
 fi
 
+
+if [ "$NFSIP" != "" ]; then
+mkdir /sapbits
+mount -t nfs4 nfsnfslb:/NWS/SapBits /sapbits
+echo "nfsnfslb:/NWS/SapBits /sapbits nfs4 defaults 0 0" >> /etc/fstab
+SAPBITSDIR="/sapbits"
+else
+  mkdir /hana/data/sapbits
+  SAPBITSDIR="/hana/data/sapbits"
+  ln -s /sapbits /hana/data/sapbits
+fi
 
 #install hana prereqs
 retry 5 "zypper install -y glibc-2.22-51.6"
@@ -412,6 +520,8 @@ retry 5 "zypper install -y saptune"
 retry 5 "zypper install -y libunwind"
 retry 5 "zypper install -y libicu"
 
+saptune solution apply HANA
+saptune daemon start
 
 # step2
 echo $URI >> /tmp/url.txt
@@ -423,19 +533,14 @@ cat /etc/waagent.conf | sed $sedcmd | sed $sedcmd2 > /etc/waagent.conf.new
 cp -f /etc/waagent.conf.new /etc/waagent.conf
 # we may be able to restart the waagent and get the swap configured immediately
 
-cat >>/etc/hosts <<EOF
-$VMIPADDR $VMNAME
-$OTHERIPADDR $OTHERVMNAME
-EOF
 
 #!/bin/bash
-cd /hana/data/sapbits
+cd $SAPBITSDIR
 echo "hana download start" >> /tmp/parameter.txt
-retry 5 "/usr/bin/wget --quiet $URI/SapBits/md5sums"
-retry 5 "/usr/bin/wget --quiet $URI/SapBits/51052325_part1.exe"
-retry 5 "/usr/bin/wget --quiet $URI/SapBits/51052325_part2.rar"
-retry 5 "/usr/bin/wget --quiet $URI/SapBits/51052325_part3.rar"
-retry 5 "/usr/bin/wget --quiet $URI/SapBits/51052325_part4.rar"
+download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part1.exe"
+download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part2.rar"  
+download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part3.rar"  
+download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part4.rar"  
 
 #retrieve config file.  first try on download location, then go to our repo
 /usr/bin/wget --quiet $URI/SapBits/hdbinst.cfg
@@ -448,36 +553,41 @@ fi
 echo "hana download end" >> /tmp/parameter.txt
 
 date >> /tmp/testdate
-cd /hana/data/sapbits
+cd $SAPBITSDIR
 
 echo "hana unrar start" >> /tmp/parameter.txt
 #!/bin/bash
-cd /hana/data/sapbits
-unrar x 51052325_part1.exe
+cd $SAPBITSDIR
+unrar  -o- x 51052325_part1.exe
 echo "hana unrar end" >> /tmp/parameter.txt
-
 echo "hana prepare start" >> /tmp/parameter.txt
-cd /hana/data/sapbits
+cd $SAPBITSDIR
 
 #!/bin/bash
-cd /hana/data/sapbits
+cd $SAPBITSDIR
 myhost=`hostname`
 sedcmd="s/REPLACE-WITH-HOSTNAME/$myhost/g"
-sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/hana\/data\/sapbits\/51052325/g"
+if [ "$NFSIP" != "" ]; then
+ sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/sapbits\/51052325/g"
+else
+ sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/hana\/data\/sapbits\/51052325/g"
+fi
+
 sedcmd3="s/root_user=root/root_user=$HANAUSR/g"
 sedcmd4="s/root_password=AweS0me@PW/root_password=$HANAPWD/g"
 sedcmd5="s/master_password=AweS0me@PW/master_password=$HANAPWD/g"
 sedcmd6="s/sid=H10/sid=$HANASID/g"
 sedcmd7="s/number=00/number=$HANANUMBER/g"
-cat hdbinst.cfg | sed $sedcmd | sed $sedcmd2 | sed $sedcmd3 | sed $sedcmd4 | sed $sedcmd5 | sed $sedcmd6 > hdbinst-local.cfg
+hdbinstfile="${SAPBITSDIR}/hdbinst-${myhost}.cfg"
+cat hdbinst.cfg | sed $sedcmd | sed $sedcmd2 | sed $sedcmd3 | sed $sedcmd4 | sed $sedcmd5 | sed $sedcmd6 > ${hdbinstfile}
 echo "hana preapre end" >> /tmp/parameter.txt
 
 ##change this to pass passwords on command line
 
 #!/bin/bash
 echo "install hana start" >> /tmp/parameter.txt
-cd /hana/data/sapbits/51052325/DATA_UNITS/HDB_LCM_LINUX_X86_64
-/hana/data/sapbits/51052325/DATA_UNITS/HDB_LCM_LINUX_X86_64/hdblcm -b --configfile /hana/data/sapbits/hdbinst-local.cfg
+cd $SAPBITSDIR/51052325/DATA_UNITS/HDB_LCM_LINUX_X86_64
+$SAPBITSDIR/51052325/DATA_UNITS/HDB_LCM_LINUX_X86_64/hdblcm -b --configfile ${hdbinstfile}
 echo "install hana end" >> /tmp/parameter.txt
 echo "install hana end" >> /tmp/hanacomplete.txt
 
@@ -502,8 +612,6 @@ if [ "$CONFIGHSR" == "yes" ]; then
     HANASIDU="${HANASID^^}"
 
     cd /root
-#    wget $REPOURI/scripts/waitfor.sh
-#    chmod u+x waitfor.sh
     SYNCUSER="hsrsync"
     SYNCPASSWORD="Repl1cate"
 
@@ -522,7 +630,7 @@ EOF
 chmod a+r /tmp/hdbsetupsql
 su - -c "hdbsql -u system -p $HANAPWD -d SYSTEMDB -I /tmp/hdbsetupsql" $HANAADMIN 
 touch /tmp/hanabackupdone.txt
-/root/waitfor.sh root $OTHERVMNAME /tmp/hanabackupdone.txt
+waitfor root $OTHERVMNAME /tmp/hanabackupdone.txt
 
     
 if [ "$ISPRIMARY" = "yes" ]; then
@@ -536,7 +644,7 @@ EOF
 	su - $HANAADMIN -c "bash /tmp/srenable"
 
 	touch /tmp/readyforsecondary.txt
-	/root/waitfor.sh root $OTHERVMNAME /tmp/readyforcerts.txt	
+	waitfor root $OTHERVMNAME /tmp/readyforcerts.txt	
 	scp /usr/sap/$HANASIDU/SYS/global/security/rsecssfs/data/SSFS_$HANASIDU.DAT root@$OTHERVMNAME:/root/SSFS_$HANASIDU.DAT
 	ssh -o BatchMode=yes -o StrictHostKeyChecking=no root@$OTHERVMNAME "cp /root/SSFS_$HANASIDU.DAT /usr/sap/$HANASIDU/SYS/global/security/rsecssfs/data/SSFS_$HANASIDU.DAT"
 	ssh -o BatchMode=yes -o StrictHostKeyChecking=no root@$OTHERVMNAME "chown $HANAADMIN:sapsys /usr/sap/$HANASIDU/SYS/global/security/rsecssfs/data/SSFS_$HANASIDU.DAT"
@@ -548,10 +656,10 @@ EOF
 	touch /tmp/dohsrjoin.txt
     else
 	#do stuff on the secondary
-	/root/waitfor.sh root $OTHERVMNAME /tmp/readyforsecondary.txt	
+	waitfor root $OTHERVMNAME /tmp/readyforsecondary.txt	
 
 	touch /tmp/readyforcerts.txt
-	/root/waitfor.sh root $OTHERVMNAME /tmp/dohsrjoin.txt	
+	waitfor root $OTHERVMNAME /tmp/dohsrjoin.txt	
 	cat >/tmp/hsrjoin <<EOF
 sapcontrol -nr $HANANUMBER -function StopSystem HDB
 sapcontrol -nr $HANANUMBER -function WaitforStopped 600 2
@@ -593,7 +701,8 @@ echo "hana iscsi end" >> /tmp/parameter.txt
 device="$(lsscsi 6 0 0 0| cut -c59-)"
 diskid="$(ls -l /dev/disk/by-id/scsi-* | grep $device)"
 sbdid="$(echo $diskid | grep -o -P '/dev/disk/by-id/scsi-3.{32}')"
-sbd -d $sbdid -1 90 -4 180 create
+
+sbd -d $sbdid -1 ${WATCHDOGTIMEOUT} -4 ${MSGWAITTIMEOUT} create
 else
 
 echo "hana iscsi end" >> /tmp/parameter.txt
@@ -606,12 +715,15 @@ cp -f /etc/sysconfig/sbd /etc/sysconfig/sbd.new
 device="$(lsscsi 6 0 0 0| cut -c59-)"
 diskid="$(ls -l /dev/disk/by-id/scsi-* | grep $device)"
 sbdid="$(echo $diskid | grep -o -P '/dev/disk/by-id/scsi-3.{32}')"
+
 sbdcmd="s#SBD_DEVICE=\"\"#SBD_DEVICE=\"$sbdid\"#g"
-sbdcmd2='s/SBD_PACEMAKER=/SBD_PACEMAKER="yes"/g'
-sbdcmd3='s/SBD_STARTMODE=/SBD_STARTMODE="always"/g'
-cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > sbd.modified
+sbdcmd2='s/SBD_PACEMAKER=.*/SBD_PACEMAKER="yes"/g'
+sbdcmd3='s/SBD_STARTMODE=.*/SBD_STARTMODE="always"/g'
+cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > /etc/sysconfig/sbd.modified
+echo "SBD_WATCHDOG=yes" >>/etc/sysconfigsbd.modified
 cp -f /etc/sysconfig/sbd.modified /etc/sysconfig/sbd
 echo "hana sbd end" >> /tmp/parameter.txt
+
 
 echo softdog > /etc/modules-load.d/softdog.conf
 modprobe -v softdog
@@ -625,7 +737,24 @@ if [ "$ISPRIMARY" = "yes" ]; then
 #configure SAP HANA topology
 HANAID="$HANASID"_HDB"$HANANUMBER"
 
-sudo crm configure property maintenance-mode=true
+crm configure property maintenance-mode=true
+
+crm configure delete stonith-sbd
+
+crm configure primitive stonith-sbd stonith:external/sbd \
+     params pcmk_delay_max="15" \
+     op monitor interval="15" timeout="15"
+
+
+crm configure property \$id="cib-bootstrap-options" stonith-enabled=true \
+               no-quorum-policy="ignore" \
+               stonith-action="reboot" \
+               stonith-timeout=$STONITHTIMEOUT
+
+crm configure  rsc_defaults \$id="rsc-options"  resource-stickiness="1000" migration-threshold="5000"
+
+
+crm configure  op_defaults \$id="op-options"  timeout="600"
 
 crm configure primitive rsc_SAPHanaTopology_$HANAID ocf:suse:SAPHanaTopology \
         operations \$id="rsc_sap2_$HANAID-operations" \
@@ -636,6 +765,7 @@ crm configure primitive rsc_SAPHanaTopology_$HANAID ocf:suse:SAPHanaTopology \
 
 crm configure clone cln_SAPHanaTopology_$HANAID rsc_SAPHanaTopology_$HANAID \
         meta clone-node-max="1" interleave="true"
+
 
 crm configure primitive rsc_SAPHana_$HANAID ocf:suse:SAPHana     \
 operations \$id="rsc_sap_$HANAID-operations"   \
@@ -663,14 +793,14 @@ crm configure group g_ip_$HANAID rsc_ip_$HANAID rsc_nc_$HANAID
 
 #crm configure colocation col_saphana_ip_$HANAID 2000: rsc_ip_$HANAID:Started \
 #    msl_SAPHana_$HANAID:Master
-crm configure colocation col_saphana_ip_$HANAID 2000: rsc_ip_$HANAID:Started  msl_SAPHana_$HANAID:Master
+crm configure colocation col_saphana_ip_$HANAID 4000: g_ip_$HANAID:Started  msl_SAPHana_$HANAID:Master
 
-crm configure order ord_SAPHana_$HANAID 2000: cln_SAPHanaTopology_$HANAID  msl_SAPHana_$HANAID
+crm configure order ord_SAPHana_$HANAID Optional: cln_SAPHanaTopology_$HANAID  msl_SAPHana_$HANAID
 
 sleep 20
 
-sudo crm resource cleanup rsc_SAPHana_$HANAID
+crm resource cleanup rsc_SAPHana_$HANAID
 
-sudo crm configure property maintenance-mode=false
+crm configure property maintenance-mode=false
 
 fi

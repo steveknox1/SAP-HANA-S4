@@ -1,0 +1,229 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {        
+        "vmName": {
+            "type": "string",
+            "metadata": {
+                "description": "Netweaver VM name. The true vmName will vmName then a dash then the number. Example: nwVm-1"
+            },
+            "defaultValue": "nwVm"
+        },
+        "StaticIP": {
+            "type": "string",
+            "metadata": {
+                "description": "The static ip address"
+            },
+            "defaultValue": "10.0.1.49"
+        },
+        "osType": {
+            "type": "string",
+            "allowedValues": [
+                "Windows Server 2016 Datacenter",
+                "SLES 12 SP3",
+                "SLES 12 SP3 BYOS",
+                "SLES 12 SP2",
+                "SLES 12 SP2 BYOS"
+            ],
+            "defaultValue": "SLES 12 SP3",
+            "metadata": {
+                "description": "The type of the operating system you want to deploy."
+            }
+        },
+        "isPrimary": {
+            "type": "string",
+            "metadata": {
+                "description": "Is this the primart app server"
+            },
+            "defaultValue": "yes"
+        },
+        "customUri": {
+            "type": "string",
+            "metadata": {
+                "description": "Uri for SAP Bits"
+            },
+            "defaultValue": "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/"
+        },
+        "NFSILBIP": {
+            "type": "string",
+            "metadata": {
+                "description": "IP for NFS Load Balancer"
+            },
+            "defaultValue": "10.0.1.10"
+        },
+        "ASCSVM1": {
+            "type": "string",
+            "metadata": {
+                "description": "ASCS VM1 Name"
+            },
+            "defaultValue": "ascs1"
+        },
+        "ASCSIP1": {
+            "type": "string",
+            "metadata": {
+                "description": "ASCS VM1 Ip address"
+            },
+            "defaultValue": "10.0.1.17"
+        },
+        "ASCSVM2": {
+            "type": "string",
+            "metadata": {
+                "description": "ASCS VM2 Name"
+            },
+            "defaultValue": "ascs2"
+        },
+        "ASCSIP2": {
+            "type": "string",
+            "metadata": {
+                "description": "ASCS VM2 Ip address"
+            },
+            "defaultValue": "10.0.1.18"
+        },
+        "_artifactsLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "The base URI where artifacts required by this template are located. When the template is deployed using the accompanying scripts, a private location in the subscription will be used and this value will be automatically generated."
+            },
+            "defaultValue": "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-netweaver-server"
+        },
+        "_artifactsLocationSasToken": {
+            "type": "securestring",
+            "metadata": {
+                "description": "The sasToken required to access _artifactsLocation.  When the template is deployed using the accompanying scripts, a sasToken will be automatically generated."
+            },
+            "defaultValue": ""
+        },
+        "MASTERPASSWORD": {
+            "type": "securestring",
+            "metadata": {
+                "description": "SAP Master Password."
+            },
+            "defaultValue": "P@ssw0rdForCat"
+        },
+        "SAPADMUID": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP ADMU ID."
+            },
+            "defaultValue": "1050"
+        },
+        "SAPSYSGID": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP SYSG ID."
+            },
+            "defaultValue": "1001"
+        },
+        "SIDADMUID": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP ADMU ID."
+            },
+            "defaultValue": "1040"
+        },
+        "DBHOST": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP DB Host."
+            },
+            "defaultValue": "00"
+        },
+        "DBSID": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP DB SID."
+            },
+            "defaultValue": "00"
+        },
+        "DBINSTANCE": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP DB Instance."
+            },
+            "defaultValue": "03"
+        },
+        "ASCSSID": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP ASCD ID."
+            },
+            "defaultValue": "04"
+        },
+        "ASCSHOST": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP ASCD Host."
+            },
+            "defaultValue": "ascs1"
+        },
+        "NWINSTANCE": {
+            "type": "string",
+            "metadata": {
+                "description": "SAP NW Instance."
+            },
+            "defaultValue": "05"
+        }
+    },
+    "variables": {
+        "vmName": "[parameters('vmName')]",
+        "images": {
+            "Windows Server 2016 Datacenter": {
+                "sku": "2016-Datacenter",
+                "offer": "WindowsServer",
+                "publisher": "MicrosoftWindowsServer",
+                "version": "latest",
+                "OSType": "Windows"
+            },
+            "SLES 12 SP3": {
+                "sku": "12-SP3",
+                "offer": "SLES-SAP",
+                "publisher": "SUSE",
+                "version": "latest",
+                "OSType": "Linux"
+            },
+            "SLES 12 SP3BYOS": {
+                "sku": "12-SP3",
+                "offer": "SLES-SAP-BYOS",
+                "publisher": "SUSE",
+                "OSType": "Linux",
+                "version": "latest"
+            },
+            "SLES 12 SP2": {
+                "sku": "12-SP2",
+                "offer": "SLES-SAP",
+                "publisher": "SUSE",
+                "version": "latest",
+                "OSType": "Linux"
+            },
+            "SLES 12 SP2 BYOS": {
+                "sku": "12-SP2",
+                "offer": "SLES-SAP-BYOS",
+                "publisher": "SUSE",
+                "OSType": "Linux",
+                "version": "latest"
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(variables('vmName'),'/', 'CustomScript')]",
+            "apiVersion": "2017-12-01",
+            "location": "[resourceGroup().location]",            
+            "properties": {
+                "publisher": "Microsoft.Azure.Extensions",
+                "type": "CustomScript",
+                "typeHandlerVersion": "2.0",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "fileUris": [
+                        "[concat(parameters('_artifactsLocation'), '/', 'nwserver.sh', parameters('_artifactsLocationSasToken'))]"
+                    ],
+                    "commandToExecute": "[concat('sh nwserver.sh',' \"',parameters('vmName'),'\" \"',parameters('StaticIP'),'\" \"',parameters('isPrimary'),'\" \"',parameters('customUri'),'\" \"',parameters('vmName'),'\" \"',parameters('vmName'),'\" \"',parameters('vmName'),'\" \"',parameters('NFSILBIP'),'\" \"',parameters('ASCSVM1'),'\" \"',parameters('ASCSIP1'),'\" \"',parameters('ASCSVM2'),'\" \"',parameters('ASCSIP2'),'\" \"',parameters('MASTERPASSWORD'),'\" \"',parameters('SAPADMUID'),'\" \"',parameters('SAPSYSGID'),'\" \"',parameters('SIDADMUID'),'\" \"',parameters('DBHOST'),'\" \"',parameters('DBSID'),'\" \"',parameters('DBINSTANCE'),'\" \"',parameters('ASCSSID'),'\" \"',parameters('ASCSHOST'),'\" \"',parameters('NWINSTANCE'),'\"')]"
+                },
+                "protectedSettings": {}
+            }
+        }
+    ],
+    "outputs": {}
+}

@@ -1,9 +1,7 @@
 #!/bin/bash
-
+set -x
 echo "Reading config...." >&2
 source ./azuredeploy.cfg
-
-az account set --subscription $subscriptionid
 
 echo "creating ascs cluster"
 az group deployment create \
@@ -13,14 +11,21 @@ az group deployment create \
    --parameters prefix=ascs \
    VMName1=$ASCSVMNAME1 \
    VMName2=$ASCSVMNAME2 \
-   VMSize="Standard_D2s_v3" \
-   vnetName=$vnetname \
-   SubnetName=$appsubnetname \
-   VMUserName="testuser" \
-   VMPassword=$vmpassword \
-   OperatingSystem="SLES for SAP 12 SP2" \
-   ExistingNetworkResourceGroup=$rgname \
-   StaticIP1=$ASCSIP1 \
-   StaticIP2=$ASCSIP2 \
-   iSCSIIP=$ISCSIIP \
-   ILBIP=$ASCSILBIP
+   VMSize="Standard_DS3_v2" \
+   vnetName="$vnetname" \
+   SubnetName="$appsubnetname" \
+   VMUserName="$vmusername" \
+   VMPassword="$vmpassword" \
+   OperatingSystem="SLES for SAP 12 SP3" \
+   ExistingNetworkResourceGroup="$rgname" \
+   StaticIP1="$ASCSIP1" \
+   StaticIP2="$ASCSIP2" \
+   iSCSIIP="$ISCSIIP" \
+   ASCSLBIP="$ASCSLBIP" \
+   ERSLBIP="$ERSLBIP" \
+   SubscriptionEmail="${slesemail}" \
+   SubscriptionID="$slesreg" \
+   SMTUri="$slessmt"
+
+
+echo "ascs cluster created"

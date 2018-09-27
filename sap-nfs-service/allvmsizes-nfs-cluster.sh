@@ -8,7 +8,7 @@ ELEMENTS=${#args[@]}
 # echo each element in array
 # for loop
 for (( i=0;i<$ELEMENTS;i++)); do
-    echo ${args[${i}]}
+    echo "ARG[${i}]: ${args[${i}]}"
 done
 
 USRNAME=${1}
@@ -18,15 +18,23 @@ OTHERVMNAME=${4}
 VMIPADDR=${5}
 OTHERIPADDR=${6}
 ISPRIMARY=${7}
-REPOURI=${8}
-ISCSIIP=${9}
-IQN=${10}
-IQNCLIENT=${11}
-LBIP=${12}
-SUBEMAIL=${13}
-SUBID=${14}
-SUBURL=${15}
+URI=${8}
+HANASID=${9}
+REPOURI=${10}
+ISCSIIP=${11}
+IQN=${12}
+IQNCLIENT=${13}
+LBIP=${14}
+SUBEMAIL=${15}
+SUBID=${16}
+SUBURL=${17}
 
+###
+# cluster tuning values
+WATCHDOGTIMEOUT="30"
+MSGWAITTIMEOUT="60"
+STONITHTIMEOUT="150s"
+###
 
 echo "small.sh receiving:"
 echo "USRNAME:" $USRNAME >> /tmp/variables.txt
@@ -66,6 +74,26 @@ retry() {
 
 declare -fxr retry
 
+waitfor() {
+P_USER=$1
+P_HOST=$2
+P_FILESPEC=$3
+
+RESULT=1
+while [ $RESULT = 1 ]
+do
+    sleep 1
+    ssh -q -n -o BatchMode=yes -o StrictHostKeyChecking=no "$P_USER@$P_HOST" "test -e $P_FILESPEC"
+    RESULT=$?
+    if [ "$RESULT" = "255" ]; then
+        (>&2 echo "waitfor failed in ssh")
+        return 255
+    fi
+done
+return 0
+}
+
+declare -fxr waitfor
 
 register_subscription() {
   SUBEMAIL=$1
@@ -141,8 +169,8 @@ quorum {
         # Enable and configure quorum subsystem (default: off)
         # see also corosync.conf.5 and votequorum.5
         provider: corosync_votequorum
-        expected_votes: 1
-        two_node: 0
+        expected_votes: 2
+        two_node: 1
 }
 EOF
 
@@ -161,10 +189,10 @@ setup_cluster() {
   if [ "$ISPRIMARY" = "yes" ]; then
     ha-cluster-init -y -q csync2
     ha-cluster-init -y -q -u corosync
-    ha-cluster-init -y -q sbd -d $SBDID
+    ha-cluster-init -y -q -s $SBDID sbd 
     ha-cluster-init -y -q cluster name=$CLUSTERNAME interface=eth0
     touch /tmp/corosyncconfig1.txt	
-    /root/waitfor.sh root $OTHERVMNAME /tmp/corosyncconfig2.txt	
+    waitfor root $OTHERVMNAME /tmp/corosyncconfig2.txt	
     systemctl stop corosync
     systemctl stop pacemaker
     write_corosync_config 10.0.5.0 $VMNAME $OTHERVMNAME
@@ -174,21 +202,72 @@ setup_cluster() {
 
     sleep 10
   else
-    /root/waitfor.sh root $OTHERVMNAME /tmp/corosyncconfig1.txt	
+    waitfor root $OTHERVMNAME /tmp/corosyncconfig1.txt	
     ha-cluster-join -y -q -c $OTHERVMNAME csync2 
     ha-cluster-join -y -q ssh_merge
     ha-cluster-join -y -q cluster
     systemctl stop corosync
     systemctl stop pacemaker
     touch /tmp/corosyncconfig2.txt	
-    /root/waitfor.sh root $OTHERVMNAME /tmp/corosyncconfig3.txt	
+    waitfor root $OTHERVMNAME /tmp/corosyncconfig3.txt	
     write_corosync_config 10.0.5.0 $OTHERVMNAME $VMNAME 
     systemctl restart corosync
     systemctl start pacemaker
   fi
 }
 
+download_sapbits() {
+    URI=$1
 
+  cd  /srv/nfs/NWS/SapBits
+
+  retry 5 "wget $URI/SapBits/51050423_3.ZIP"
+  retry 5 "wget $URI/SapBits/51050829_JAVA_part1.exe"   
+  retry 5 "wget $URI/SapBits/51050829_JAVA_part2.rar" 
+  retry 5 "wget $URI/SapBits/51052190_part1.exe"
+  retry 5 "wget $URI/SapBits/51052190_part2.rar"
+  retry 5 "wget $URI/SapBits/51052190_part3.rar"
+  retry 5 "wget $URI/SapBits/51052190_part4.rar"
+  retry 5 "wget $URI/SapBits/51052190_part5.rar"
+  retry 5 "wget $URI/SapBits/51052318_part1.exe"
+  retry 5 "wget $URI/SapBits/51052318_part2.rar"
+  retry 5 "wget $URI/SapBits/70SWPM10SP23_1-20009701.sar"
+  retry 5 "wget $URI/SapBits/SAPCAR_1014-80000935.EXE"
+  retry 5 "wget $URI/SapBits/SWPM20SP00_2-80003424.SAR"
+
+  #unpack some of this
+  retry 5 "zypper install -y unrar"
+
+mkdir 51050423_3
+cd 51050423_3
+unzip ../51050423_3.ZIP
+cd ..
+
+mkdir 51050829
+cd 51050829
+zypper install -y unrar
+cd ..
+
+chmod u+x SAPCAR_1014-80000935.EXE
+ln -s ./SAPCAR_1014-80000935.EXE sapcar
+
+mkdir SWPM20SP00_2
+cd SWPM20SP00_2
+../sapcar -xf ../SWPM20SP00_2-80003424.SAR
+cd ..
+
+mkdir 51050829
+cd 51050829
+unrar x ../51050829_JAVA_part1.exe
+cd ..
+
+mkdir 51052190
+cd 51052190
+unrar x ../51052190_part1.exe
+cd ..
+
+
+}
 
 register_subscription  "$SUBEMAIL"  "$SUBID" "$SUBURL"
 
@@ -241,9 +320,7 @@ EOF
     sshpt --hosts $OTHERVMNAME -u $USRNAME -p $NFSPWD --sudo "chmod 700 /root/.ssh/authorized_keys"
 
     cd /root 
-    wget $REPOURI/waitfor.sh
-    chmod u+x waitfor.sh
-
+ 
 #Clustering setup
 #start services [A]
 systemctl enable iscsid
@@ -273,7 +350,7 @@ sbdid="$(echo $diskid | grep -o -P '/dev/disk/by-id/scsi-3.{32}')"
 
 #node1
 if [ "$ISPRIMARY" = "yes" ]; then
-  sbd -d $sbdid -1 90 -4 180 create
+  sbd -d $sbdid -1 ${WATCHDOGTIMEOUT} -4 ${MSGWAITTIMEOUT}  create
 fi
 
 #!/bin/bash [A]
@@ -281,9 +358,10 @@ cd /etc/sysconfig
 cp -f /etc/sysconfig/sbd /etc/sysconfig/sbd.new
 
 sbdcmd="s#SBD_DEVICE=\"\"#SBD_DEVICE=\"$sbdid\"#g"
-sbdcmd2='s/SBD_PACEMAKER=/SBD_PACEMAKER="yes"/g'
-sbdcmd3='s/SBD_STARTMODE=/SBD_STARTMODE="always"/g'
-cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > sbd.modified
+sbdcmd2='s/SBD_PACEMAKER=.*/SBD_PACEMAKER="yes"/g'
+sbdcmd3='s/SBD_STARTMODE=.*/SBD_STARTMODE="always"/g'
+cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > /etc/sysconfig/sbd.modified
+echo "SBD_WATCHDOG=yes" >>/etc/sysconfigsbd.modified
 cp -f /etc/sysconfig/sbd.modified /etc/sysconfig/sbd
 echo "hana sbd end" >> /tmp/parameter.txt
 
@@ -292,7 +370,6 @@ modprobe -v softdog
 echo "hana watchdog end" >> /tmp/parameter.txt
 
 cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-
 
 setup_cluster $ISPRIMARY $sbdid $VMNAME $OTHERVMNAME "nfscluster"
 
@@ -382,16 +459,18 @@ drbdadm up NWS-nfs
   mask=$(echo $LBIP | cut -d'/' -f 2)
   
   echo "Creating NFS directories"
+  mkdir /srv/nfs/
   mkdir /srv/nfs/NWS
   chattr +i /srv/nfs/NWS
   mount /dev/drbd0 /srv/nfs/NWS
-  mkdir /srv/nfs/NWS/sidsys
-  mkdir /srv/nfs/NWS/sapmntsid
+  mkdir /srv/nfs/NWS/"$HANASID"sys
+  mkdir /srv/nfs/NWS/sapmnt"$HANASID"
   mkdir /srv/nfs/NWS/trans
   mkdir /srv/nfs/NWS/ASCS
   mkdir /srv/nfs/NWS/ASCSERS
   mkdir /srv/nfs/NWS/SCS
   mkdir /srv/nfs/NWS/SCSERS
+  mkdir /srv/nfs/NWS/SapBits
   umount /srv/nfs/NWS
 
   echo "waiting for drbd sync"
@@ -426,7 +505,6 @@ echo "Create NFS server and root share"
 echo "/srv/nfs/ *(rw,no_root_squash,fsid=0)">/etc/exports
 systemctl enable nfsserver
 service nfsserver restart
-mkdir /srv/nfs/
 
 drbdadm create-md NWS-nfs
 drbdadm up NWS-nfs
@@ -443,8 +521,24 @@ if [ "$ISPRIMARY" = "yes" ]; then
   echo "Creating NFS resources"
 
   crm configure property maintenance-mode=true
-  crm configure property stonith-timeout=600
   
+crm configure delete stonith-sbd
+
+crm configure primitive stonith-sbd stonith:external/sbd \
+     params pcmk_delay_max="15" \
+     op monitor interval="15" timeout="15"
+
+crm configure property stonith-timeout=$STONITHTIMEOUT
+
+crm configure property \$id="cib-bootstrap-options" stonith-enabled=true \
+               no-quorum-policy="ignore" \
+               stonith-action="reboot" \
+               stonith-timeout=$STONITHTIMEOUT
+
+crm configure  rsc_defaults \$id="rsc-options"  resource-stickiness="1000" migration-threshold="5000"
+
+crm configure  op_defaults \$id="op-options"  timeout="600"
+
 #  crm node standby $OTHERVMNAME
 #  crm node standby $VMNAME
 
@@ -454,24 +548,26 @@ if [ "$ISPRIMARY" = "yes" ]; then
   crm configure ms ms-drbd_NWS_nfs drbd_NWS_nfs meta master-max="1" master-node-max="1" clone-max="2" clone-node-max="1" notify="true" interleave="true"
   crm configure primitive fs_NWS_sapmnt ocf:heartbeat:Filesystem params device=/dev/drbd0 directory=/srv/nfs/NWS fstype=xfs options="sync,dirsync" op monitor interval="10s"
 
-  crm configure primitive exportfs_NWS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS" options="rw,no_root_squash" clientspec="*" fsid=1 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_sidsys ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/sidsys" options="rw,no_root_squash" clientspec="*" fsid=2 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_sapmntsid ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/sapmntsid" options="rw,no_root_squash" clientspec="*" fsid=3 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_trans ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/trans" options="rw,no_root_squash" clientspec="*" fsid=4 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_ASCS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/ASCS" options="rw,no_root_squash" clientspec="*" fsid=5 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_ASCSERS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/ASCSERS" options="rw,no_root_squash" clientspec="*" fsid=6 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_SCS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SCS" options="rw,no_root_squash" clientspec="*" fsid=7 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive exportfs_NWS_SCSERS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SCSERS" options="rw,no_root_squash" clientspec="*" fsid=8 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  
+  crm configure primitive ex_NWS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS" options="rw,no_root_squash" clientspec="*" fsid=1 wait_for_leasetime_on_stop=true op monitor interval="30s"  
+  crm configure primitive ex_NWS_"$HANASID"sys ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/$HANASIDsys" options="rw,no_root_squash" clientspec="*" fsid=2 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  crm configure primitive ex_NWS_sapmnt"$HANASID" ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/sapmnt$HANASID" options="rw,no_root_squash" clientspec="*" fsid=3 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  crm configure primitive ex_NWS_trans ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/trans" options="rw,no_root_squash" clientspec="*" fsid=4 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  crm configure primitive ex_NWS_ASCS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/ASCS" options="rw,no_root_squash" clientspec="*" fsid=5 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  crm configure primitive ex_NWS_ASCSERS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/ASCSERS" options="rw,no_root_squash" clientspec="*" fsid=6 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  crm configure primitive ex_NWS_SCS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SCS" options="rw,no_root_squash" clientspec="*" fsid=7 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  crm configure primitive ex_NWS_SCSERS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SCSERS" options="rw,no_root_squash" clientspec="*" fsid=8 wait_for_leasetime_on_stop=true op monitor interval="30s"
+  #crm configure primitive ex_NWS_SapBits ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SapBits" options="rw,no_root_squash" clientspec="*" fsid=9 wait_for_leasetime_on_stop=true op monitor interval="30s"
+    
   lbprobe="61000"
   mask="24"
 
   crm configure primitive vip_NWS_nfs IPaddr2 params ip=$LBIP cidr_netmask=$mask op monitor interval=10 timeout=20
   crm configure primitive nc_NWS_nfs anything params binfile="/usr/bin/nc" cmdline_options="-l -k $lbprobe" op monitor timeout=20s interval=10 depth=0
 
-  crm configure group g-NWS_nfs fs_NWS_sapmnt exportfs_NWS exportfs_NWS_sidsys exportfs_NWS_sapmntsid exportfs_NWS_trans exportfs_NWS_ASCS exportfs_NWS_ASCSERS exportfs_NWS_SCS exportfs_NWS_SCSERS nc_NWS_nfs vip_NWS_nfs
+  crm configure group g-NWS_nfs fs_NWS_sapmnt ex_NWS ex_NWS_trans ex_NWS_ASCS ex_NWS_ASCSERS ex_NWS_SCS ex_NWS_SCSERS nc_NWS_nfs vip_NWS_nfs ex_NWS_sapmnt"$HANASID" ex_NWS_"$HANASID"sys
   crm configure order o-NWS_drbd_before_nfs inf: ms-drbd_NWS_nfs:promote g-NWS_nfs:start
   crm configure colocation col-NWS_nfs_on_drbd inf: g-NWS_nfs ms-drbd_NWS_nfs:Master
+
 
 #  crm node online $VMNAME
 #  crm node online $OTHERVMNAME
@@ -479,6 +575,7 @@ if [ "$ISPRIMARY" = "yes" ]; then
 
   touch /tmp/crmconfigcomplete.txt
 
+ # download_sapbits "$URI"
 fi
 #node2
 if [ "$ISPRIMARY" = "no" ]; then

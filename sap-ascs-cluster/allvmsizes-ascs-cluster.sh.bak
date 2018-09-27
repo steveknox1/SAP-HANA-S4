@@ -1,0 +1,629 @@
+#!/bin/bash
+set -x
+# store arguments in a special array
+args=("$@")
+# get number of elements
+ELEMENTS=${#args[@]}
+
+# echo each element in array
+# for loop
+for (( i=0;i<$ELEMENTS;i++)); do
+    echo ${args[${i}]}
+done
+
+USRNAME=${1}
+ASCSPWD=${2}
+VMNAME=${3}
+OTHERVMNAME=${4}
+VMIPADDR=${5}
+OTHERIPADDR=${6}
+ISPRIMARY=${7}
+URI=${8}
+HANASID=${9}
+REPOURI=${10}
+ISCSIIP=${11}
+IQN=${12}
+IQNCLIENT=${13}
+LBIP=${14}
+SUBEMAIL=${15}
+SUBID=${16}
+SUBURL=${17}
+NFSILBIP=${18}
+
+
+echo "small.sh receiving:"
+echo "USRNAME:" $USRNAME >> /tmp/variables.txt
+echo "ASCSPWD:" $ASCSPWD >> /tmp/variables.txt
+echo "VMNAME:" $VMNAME >> /tmp/variables.txt
+echo "OTHERVMNAME:" $OTHERVMNAME >> /tmp/variables.txt
+echo "VMIPADDR:" $VMIPADDR >> /tmp/variables.txt
+echo "OTHERIPADDR:" $OTHERIPADDR >> /tmp/variables.txt
+echo "ISPRIMARY:" $ISPRIMARY >> /tmp/variables.txt
+echo "REPOURI:" $REPOURI >> /tmp/variables.txt
+echo "ISCSIIP:" $ISCSIIP >> /tmp/variables.txt
+echo "IQN:" $IQN >> /tmp/variables.txt
+echo "IQNCLIENT:" $IQNCLIENT >> /tmp/variables.txt
+echo "LBIP:" $LBIP >> /tmp/variables.txt
+echo "SUBEMAIL:" $SUBEMAIL >> /tmp/variables.txt
+echo "SUBID:" $SUBID >> /tmp/variables.txt
+echo "SUBURL:" $SUBURL >> /tmp/variables.txt
+echo "NFSILBIP:" $NFSILBIP >> /tmp/variables.txt
+
+retry() {
+    local -r -i max_attempts="$1"; shift
+    local -r cmd="$@"
+    local -i attempt_num=1
+
+    until $cmd
+    do
+        if (( attempt_num == max_attempts ))
+        then
+            echo "Attempt $attempt_num failed and there are no more attempts left!"
+            return 1
+        else
+            echo "Attempt $attempt_num failed! Trying again in $attempt_num seconds..."
+            sleep $(( attempt_num++ ))
+        fi
+    done
+}
+
+declare -fxr retry
+
+waitfor() {
+P_USER=$1
+P_HOST=$2
+P_FILESPEC=$3
+
+RESULT=1
+while [ $RESULT = 1 ]
+do
+    sleep 1
+    ssh -q -n -o BatchMode=yes -o StrictHostKeyChecking=no "$P_USER@$P_HOST" "test -e $P_FILESPEC"
+    RESULT=$?
+    if [ "$RESULT" = "255" ]; then
+        (>&2 echo "waitfor failed in ssh")
+        return 255
+    fi
+done
+return 0
+}
+
+declare -fxr waitfor
+
+download_if_needed() {
+  P_DESTDIR=${1}
+  P_SOURCEDIR=${2}
+  P_FILENAME=${3}
+
+  DESTFILE="$P_DESTDIR/$P_FILENAME"
+  SOURCEFILE="$P_SOURCEDIR/$P_FILENAME"
+  test -e $DESTFILE
+  RESULT=$?
+  if [ "$RESULT" = "1" ]; then
+    #need to download the file
+    retry 5 "wget --quiet -O $DESTFILE $SOURCEFILE"
+  fi
+}
+
+
+
+register_subscription() {
+  SUBEMAIL=$1
+  SUBID=$2
+  SUBURL=$3
+
+#if needed, register the machine
+if [ "$SUBEMAIL" != "" ]; then
+  if [ "$SUBURL" = "NONE" ]; then 
+    SUSEConnect -e $SUBEMAIL -r $SUBID
+  else 
+    if [ "$SUBURL" != "" ]; then 
+      SUSEConnect -e $SUBEMAIL -r $SUBID --url $SUBURL
+    else 
+      SUSEConnect -e $SUBEMAIL -r $SUBID
+    fi
+  fi
+  SUSEConnect -p sle-module-public-cloud/12/x86_64 
+fi
+}
+
+write_corosync_config ()
+{
+  BINDIP=$1
+  HOST1IP=$2
+  HOST2IP=$3
+  mv /etc/corosync/corosync.conf /etc/corosync/corosync.conf.orig 
+cat > /etc/corosync/corosync.conf.new <<EOF
+totem {
+        version:        2
+        secauth:        on
+        crypto_hash:    sha1
+        crypto_cipher:  aes256
+        cluster_name:   hacluster
+        clear_node_high_bit: yes
+        token:          5000
+        token_retransmits_before_loss_const: 10
+        join:           60
+        consensus:      6000
+        max_messages:   20
+        interface {
+                ringnumber:     0
+                bindnetaddr:    $BINDIP
+                mcastport:      5405
+                ttl:            1
+        }
+ transport:      udpu
+}
+nodelist {
+  node {
+   ring0_addr:$HOST1IP
+   nodeid:1
+  }
+  node {
+   ring0_addr:$HOST2IP
+   nodeid:2
+  }
+}
+
+logging {
+        fileline:       off
+        to_stderr:      no
+        to_logfile:     no
+        logfile:        /var/log/cluster/corosync.log
+        to_syslog:      yes
+        debug:          off
+        timestamp:      on
+        logger_subsys {
+                subsys: QUORUM
+                debug:  off
+        }
+}
+quorum {
+        # Enable and configure quorum subsystem (default: off)
+        # see also corosync.conf.5 and votequorum.5
+        provider: corosync_votequorum
+        expected_votes: 1
+        two_node: 0
+}
+EOF
+
+cp /etc/corosync/corosync.conf.new /etc/corosync/corosync.conf
+}
+
+
+create_temp_swapfile() {
+  P_SWAPNAME=$1
+  P_SWAPSIZE=$2
+  
+  dd if=/dev/zero of=$P_SWAPNAME bs=1024 count=$P_SWAPSIZE
+  chown root:root $P_SWAPNAME
+  chmod 0600 $P_SWAPNAME
+  mkswap $P_SWAPNAME
+  swapon $P_SWAPNAME
+}
+
+
+setup_cluster() {
+  P_ISPRIMARY=$1
+  P_SBDID=$2
+  P_VMNAME=$3
+  P_OTHERVMNAME=$4 
+  P_CLUSTERNAME=$5 
+
+  echo "setup cluster"
+  echo "P_ISPRIMARY:" $P_ISPRIMARY >> /tmp/variables.txt
+  echo "P_SBDID:" $P_SBDID >> /tmp/variables.txt
+  echo "P_VMNAME:" $P_VMNAME>> /tmp/variables.txt
+  echo "P_OTHERVMNAME:" $P_OTHERVMNAME>> /tmp/variables.txt
+  echo "P_CLUSTERNAME:" $P_CLUSTERNAME>> /tmp/variables.txt
+
+  #node1
+  if [ "$P_ISPRIMARY" = "yes" ]; then
+    ha-cluster-init -y -q csync2
+    ha-cluster-init -y -q -u corosync
+    ha-cluster-init -y -q -s $P_SBDID sbd 
+    ha-cluster-init -y -q cluster name=$P_CLUSTERNAME interface=eth0
+    touch /tmp/corosyncconfig1.txt	
+    waitfor root $P_OTHERVMNAME /tmp/corosyncconfig2.txt	
+    systemctl stop corosync
+    systemctl stop pacemaker
+    write_corosync_config 10.0.5.0 $P_VMNAME $P_OTHERVMNAME
+    systemctl start corosync
+    systemctl start pacemaker
+    touch /tmp/corosyncconfig3.txt	
+
+    sleep 10
+  else
+    waitfor root $P_OTHERVMNAME /tmp/corosyncconfig1.txt	
+    ha-cluster-join -y -q -c $P_OTHERVMNAME csync2 
+    ha-cluster-join -y -q ssh_merge
+    ha-cluster-join -y -q cluster
+    systemctl stop corosync
+    systemctl stop pacemaker
+    touch /tmp/corosyncconfig2.txt	
+    waitfor root $P_OTHERVMNAME /tmp/corosyncconfig3.txt	
+    write_corosync_config 10.0.5.0 $P_OTHERVMNAME $VMNAME 
+    systemctl restart corosync
+    systemctl start pacemaker
+  fi
+}
+
+declare -fxr setup_cluster
+
+
+download_sapbits() {
+  URI=$1
+  SBDIR=$2
+
+  test -e $SBDIR/download_complete.txt
+  RESULT=$?
+  echo $RESULT
+  if [ "$RESULT" = "1" ]; then
+    #need to download the sap bits
+    cd  $SBDIR
+
+    download_if_needed $SBDIR "$URI/SapBits" "51050423_3.ZIP"
+    download_if_needed $SBDIR "$URI/SapBits" "51050829_JAVA_part1.exe"   
+    download_if_needed $SBDIR "$URI/SapBits" "51050829_JAVA_part2.rar" 
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part1.exe"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part2.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part3.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part4.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part5.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052318_part1.exe"
+    download_if_needed $SBDIR "$URI/SapBits" "51052318_part2.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "SAPCAR_1014-80000935.EXE"
+    download_if_needed $SBDIR "$URI/SapBits" "SWPM10SP23_1-20009701.SAR"
+    download_if_needed $SBDIR "$URI/SapBits" "SAPHOSTAGENT36_36-20009394.SAR"
+    download_if_needed $SBDIR "$URI/SapBits" "SAPEXE_200-80002573.SAR"
+    download_if_needed $SBDIR "$URI/SapBits" "SAPEXEDB_200-80002572.SAR"
+    #unpack some of this
+    retry 5 "zypper install -y unrar"
+
+    chmod u+x SAPCAR_1014-80000935.EXE
+    ln -s ./SAPCAR_1014-80000935.EXE sapcar
+
+    mkdir SWPM10SP23_1
+    cd SWPM10SP23_1
+    ../sapcar -xf ../SWPM10SP23_1-20009701.SAR
+    cd $SBDIR
+    touch $SBDIR/download_complete.txt
+  fi
+}
+
+declare -fxr download_sapbits
+
+download_dbbits() {
+  URI=$1
+  SBDIR=$2
+
+  test -e $SBDIR/dbdownload_complete.txt
+  RESULT=$?
+  echo $RESULT
+  if [ "$RESULT" = "1" ]; then
+      #need to download the sap bits
+    cd  $SBDIR
+
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part1.exe"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part2.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part3.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part4.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052190_part5.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052318_part1.exe"
+    download_if_needed $SBDIR "$URI/SapBits" "51052318_part2.rar"
+    download_if_needed $SBDIR "$URI/SapBits" "51052325_part1.exe"
+    download_if_needed $SBDIR "$URI/SapBits" "51052325_part2.rar"  
+    download_if_needed $SBDIR "$URI/SapBits" "51052325_part3.rar"  
+    download_if_needed $SBDIR "$URI/SapBits" "51052325_part4.rar"  
+    #unpack some of this
+    retry 5 "zypper install -y unrar"
+
+    unrar x 51052325_part1.exe
+    unrar x 51052190_part1.exe
+    touch $SBDIR/dbdownload_complete.txt
+  fi
+}
+
+write_ascs_ini_file() {
+  P_INIFILE=${1}
+  P_ISPRIMARY=${2}
+  P_VMNAME=${3}
+  P_OTHERVMNAME=${4} 
+  P_ASCSSID=${5}
+  P_ASCSINSTANCE=${6}
+  P_MASTERPASSWD=${7}
+  P_SAPADMUID=${8}
+  P_SAPSYSGID=${9}
+  P_SIDADMUID=${10}
+
+  echo "setup cluster"
+  echo "P_ISPRIMARY:" $P_ISPRIMARY >> /tmp/variables.txt
+  echo "P_VMNAME:" $P_VMNAME>> /tmp/variables.txt
+  echo "P_OTHERVMNAME:" $P_OTHERVMNAME>> /tmp/variables.txt
+
+  cat > $P_INIFILE <<EOF
+NW_GetMasterPassword.masterPwd = $P_MASTERPASSWD
+NW_GetSidNoProfiles.sid = $P_ASCSSID
+NW_SAPCrypto.SAPCryptoFile = /sapbits/SAPEXE_200-80002573.SAR
+NW_SCS_Instance.instanceNumber = $P_ASCSINSTANCE
+NW_SCS_Instance.scsVirtualHostname = $P_VMNAME
+NW_Unpack.sapExeSar = /sapbits/SAPEXE_200-80002573.SAR
+NW_getFQDN.setFQDN = false
+archives.downloadBasket = /sapbits
+hostAgent.sapAdmPassword = $P_MASTERPASSWD
+nwUsers.sapadmUID = $P_SAPADMUID
+nwUsers.sapsysGID = $P_SAPSYSGID
+nwUsers.sidAdmUID = $P_SIDADMUID
+nwUsers.sidadmPassword = $P_MASTERPASSWD
+EOF
+}
+
+write_ers_ini_file() {
+  P_INIFILE=${1}
+  P_ISPRIMARY=${2}
+  P_VMNAME=${3}
+  P_OTHERVMNAME=${4} 
+  P_ASCSSID=${5}
+  P_ERSINSTANCE=${6}
+  P_MASTERPASSWD=${7}
+  P_SAPADMUID=${8}
+  P_SAPSYSGID=${9}
+  P_SIDADMUID=${10}
+
+
+
+  echo "setup cluster"
+  echo "P_ISPRIMARY:" $P_ISPRIMARY >> /tmp/variables.txt
+  echo "P_VMNAME:" $P_VMNAME>> /tmp/variables.txt
+  echo "P_OTHERVMNAME:" $P_OTHERVMNAME>> /tmp/variables.txt
+
+  cat > $P_INIFILE <<EOF
+NW_getFQDN.setFQDN = false
+NW_readProfileDir.profileDir = /sapmnt/$P_ASCSSID/profile
+archives.downloadBasket = /sapbits
+hostAgent.sapAdmPassword = $P_MASTERPASSWD
+nwUsers.sapadmUID = $P_SAPADMUID
+nwUsers.sapsysGID = $P_SAPSYSGID
+nwUsers.sidAdmUID = $P_SIDADMUID
+nwUsers.sidadmPassword = $P_MASTERPASSWD
+nw_instance_ers.ersInstanceNumber = $P_ERSINSTANCE
+nw_instance_ers.ersVirtualHostname = $P_VMNAME
+EOF
+}
+
+write_db_ini_file() {
+  P_INIFILE=${1}
+  P_ASCSSID=${2}
+  P_MASTERPASSWD=${3}
+  P_SAPSYSGID=${4}
+  P_SIDADMUID=${5}
+  P_DBHOST=${6}
+  P_DBSID=${7}
+  P_DBINSTANCE=${8}
+
+  cat > $P_INIFILE <<EOF
+HDB_Schema_Check_Dialogs.schemaName = SAPABAP1
+HDB_Schema_Check_Dialogs.schemaPassword = $P_MASTERPASSWD
+NW_ABAP_Import_Dialog.dbCodepage = 4103
+NW_ABAP_Import_Dialog.migmonJobNum = 6
+NW_ABAP_Import_Dialog.migmonLoadArgs = -c 100000 -rowstorelist /silent_db/rowstorelist.txt
+NW_GetMasterPassword.masterPwd = $P_MASTERPASSWD
+NW_HDB_getDBInfo.dbhost = $P_DBHOST
+NW_HDB_getDBInfo.dbsid = $P_DBSID
+NW_HDB_getDBInfo.instanceNumber = $P_DBINSTANCE
+NW_HDB_getDBInfo.systemDbPassword = $P_MASTERPASSWD
+NW_HDB_getDBInfo.systemPassword = $P_MASTERPASSWD
+NW_Unpack.sapExeDbSar = /sapbits/SAPEXEDB_200-80002572.SAR
+NW_getFQDN.setFQDN = false
+NW_getLoadType.loadType = SAP
+NW_readProfileDir.profileDir = /usr/sap/$P_ASCSSID/SYS/profile
+hanadb.landscape.reorg.useParameterFile = DONOTUSEFILE
+nwUsers.sapsysGID = $P_SAPSYSGUID
+nwUsers.sidAdmUID = $P_SIDADMUID
+storageBasedCopy.hdb.instanceNumber = $P_DBINSTANCE
+storageBasedCopy.hdb.systemPassword = $P_MASTERPASSWD
+EOF
+}
+
+exec_sapinst() {
+  P_SAPINSTFUNC=${1}
+  P_INIFILE=${2}
+  P_PRODUCTID
+
+  echo "run sapinst"
+  echo "P_SAPINSTFUNC:" $P_SAPINSTFUNC >> /tmp/variables.txt
+  echo "P_INIFILE:" $P_INIFILE>> /tmp/variables.txt
+  echo "P_PRODUCTID:" $P_PRODUCTID>> /tmp/variables.txt
+
+  echo "running sapinst for $P_SAPINSTFUNC"
+  SILENTDIR="/silent_$SAPINSTFUNC"
+  mkdir $SILENTDIR
+  chown root:sapinst $SILENTDIR
+  chmod 775 $SILENTDIR    
+
+  cd $SILENTDIR
+  /sapbits/SWPM10SP23_1/sapinst SAPINST_INPUT_PARAMETERS_URL=$P_INIFILE SAPINST_EXECUTE_PRODUCT_ID=$P_PRODUCTID SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false
+}
+
+##end of bash function definitions
+
+
+register_subscription "$SUBEMAIL"  "$SUBID" "$SUBURL"
+
+#get the VM size via the instance api
+VMSIZE=`curl -H Metadata:true "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2017-08-01&format=text"`
+
+#install hana prereqs
+echo "installing packages"
+retry 5 "zypper update -y"
+retry 5 "zypper install -y -l sle-ha-release fence-agents" 
+retry 5 "zypper install -y unrar"
+
+# step2
+echo $URI >> /tmp/url.txt
+
+cp -f /etc/waagent.conf /etc/waagent.conf.orig
+sedcmd="s/ResourceDisk.EnableSwap=n/ResourceDisk.EnableSwap=y/g"
+sedcmd2="s/ResourceDisk.SwapSizeMB=0/ResourceDisk.SwapSizeMB=163840/g"
+cat /etc/waagent.conf | sed $sedcmd | sed $sedcmd2 > /etc/waagent.conf.new
+cp -f /etc/waagent.conf.new /etc/waagent.conf
+# we may be able to restart the waagent and get the swap configured immediately
+
+cat >>/etc/hosts <<EOF
+$VMIPADDR $VMNAME
+$OTHERIPADDR $OTHERVMNAME
+$NFSILBIP nfsnfslb
+EOF
+
+
+##external dependency on sshpt
+    retry 5 "zypper install -y python-pip"
+    retry 5 "pip install sshpt"
+    #set up passwordless ssh on both sides
+    cd ~/
+    #rm -r -f .ssh
+    cat /dev/zero |ssh-keygen -q -N "" > /dev/null
+
+    sshpt --hosts $OTHERVMNAME -u $USRNAME -p $ASCSPWD --sudo "mkdir -p /root/.ssh"
+    sshpt --hosts $OTHERVMNAME -u $USRNAME -p $ASCSPWD --sudo -c ~/.ssh/id_rsa.pub -d /root/
+    sshpt --hosts $OTHERVMNAME -u $USRNAME -p $ASCSPWD --sudo "cp /root/id_rsa.pub /root/.ssh/authorized_keys"
+    sshpt --hosts $OTHERVMNAME -u $USRNAME -p $ASCSPWD --sudo "chmod 700 /root/.ssh"
+    sshpt --hosts $OTHERVMNAME -u $USRNAME -p $ASCSPWD --sudo "chown root:root /root/.ssh/authorized_keys"
+    sshpt --hosts $OTHERVMNAME -u $USRNAME -p $ASCSPWD --sudo "chmod 700 /root/.ssh/authorized_keys"
+
+    cd /root 
+    #wget $REPOURI/waitfor.sh
+    #chmod u+x waitfor.sh
+
+#Clustering setup
+#start services [A]
+systemctl enable iscsid
+systemctl enable iscsi
+systemctl enable sbd
+
+#set up iscsi initiator [A]
+myhost=`hostname`
+cp -f /etc/iscsi/initiatorname.iscsi /etc/iscsi/initiatorname.iscsi.orig
+#change the IQN to the iscsi server
+sed -i "/InitiatorName=/d" "/etc/iscsi/initiatorname.iscsi"
+echo "InitiatorName=$IQNCLIENT" >> /etc/iscsi/initiatorname.iscsi
+systemctl restart iscsid
+systemctl restart iscsi
+iscsiadm -m discovery --type=st --portal=$ISCSIIP
+
+
+iscsiadm -m node -T "$IQN" --login --portal=$ISCSIIP:3260
+iscsiadm -m node -p "$ISCSIIP":3260 --op=update --name=node.startup --value=automatic
+
+sleep 10 
+echo "hana iscsi end" >> /tmp/parameter.txt
+
+device="$(lsscsi 6 0 0 0| cut -c59-)"
+diskid="$(ls -l /dev/disk/by-id/scsi-* | grep $device)"
+sbdid="$(echo $diskid | grep -o -P '/dev/disk/by-id/scsi-3.{32}')"
+
+#initialize sbd on node1
+if [ "$ISPRIMARY" = "yes" ]; then
+  sbd -d $sbdid -1 90 -4 180 create
+fi
+
+#!/bin/bash [A]
+cd /etc/sysconfig
+cp -f /etc/sysconfig/sbd /etc/sysconfig/sbd.new
+
+sbdcmd="s#SBD_DEVICE=\"\"#SBD_DEVICE=\"$sbdid\"#g"
+sbdcmd2='s/SBD_PACEMAKER=/SBD_PACEMAKER="yes"/g'
+sbdcmd3='s/SBD_STARTMODE=/SBD_STARTMODE="always"/g'
+cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > sbd.modified
+cp -f /etc/sysconfig/sbd.modified /etc/sysconfig/sbd
+echo "hana sbd end" >> /tmp/parameter.txt
+
+echo softdog > /etc/modules-load.d/softdog.conf
+modprobe -v softdog
+echo "hana watchdog end" >> /tmp/parameter.txt
+
+cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+
+setup_cluster "$ISPRIMARY" "$sbdid" "$VMNAME" "$OTHERVMNAME" "ascscluster"
+
+#!/bin/bash
+echo "logicalvol start" >> /tmp/parameter.txt
+  nfslun="$(lsscsi 5 0 0 0 | grep -o '.\{9\}$')"
+  pvcreate $nfslun
+  vgcreate vg_ASCS $nfslun 
+  lvcreate -l 100%FREE -n lv_ASCS vg_ASCS 
+echo "logicalvol end" >> /tmp/parameter.txt
+
+mkdir /localstore
+#this is for local sapbits
+mkfs -t xfs  /dev/vg_ASCS/lv_ASCS 
+mount -t xfs /dev/vg_ASCS/lv_ASCS /localstore
+echo "/dev/vg_ASCS/lv_ASCS /localstore xfs defaults 0 0" >> /etc/fstab
+
+mkdir /sapbits
+mount -t nfs4 nfsnfslb:/NWS/SapBits /sapbits
+echo "nfsnfslb:/NWS/SapBits /sapbits nfs4 defaults 0 0" >> /etc/fstab
+
+mkdir /sapmnt
+#we should be mounting /usr/sap instead
+mount -t nfs4 nfsnfslb:/NWS/sapmntH10 /sapmnt
+
+echo "nfsnfslb:/NWS/sapmntH10 /sapmnt nfs4 defaults 0 0" >> /etc/fstab
+
+mkdir -p /usr/sap/$HANASID/{ASCS00,D02,DVEBMGS01,ERS10,SYS} 
+mount -t nfs nfsnfslb:/NWS/ASCS /usr/sap/$HANASID/SYS
+echo "nfsnfslb:/NWS/ASCS /usr/sap/$HANASID/SYS nfs4 defaults 0 0" >> /etc/fstab
+
+cd /sapbits
+download_sapbits $URI /sapbits
+touch /tmp/sapbitsdownloaded.txt
+create_temp_swapfile "/localstore/tempswap" 2000000
+
+groupadd -g 1000 sapinst
+groupadd -g 1001 sapsys
+usermod -a -G sapsys root
+mkdir /silent_install
+cd /silent_install
+chown root:sapinst /silent_install
+chmod g+rwx /silent_install
+chmod o+rx /silent_install
+
+if [ "$ISPRIMARY" = "yes" ]; then
+  write_ascs_ini_file "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME"
+  install_ascs "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME"
+  download_dbbits $URI /sapbits
+  sleep 10m
+  install_database "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME"
+else
+  waitfor  root $P_OTHERVMNAME /tmp/sapbitsdownloaded.txt
+  write_ers_ini_file "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME"
+  install_ers "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME"
+fi
+
+#node1
+if [ "$ISPRIMARY" = "yes" ]; then
+crm configure property maintenance-mode="true"   
+
+ crm configure primitive rsc_sap_NW1_ASCS00 SAPInstance \
+ operations \$id=rsc_sap_NW1_ASCS00-operations \
+ op monitor interval=11 timeout=60 on_fail=restart \
+ params InstanceName=NW1_ASCS00_nw1-ascs START_PROFILE="/sapmnt/NW1/profile/NW1_ASCS00_nw1-ascs" \
+ AUTOMATIC_RECOVER=false \
+ meta resource-stickiness=5000 failure-timeout=60 migration-threshold=1 priority=10
+
+ crm configure primitive rsc_sap_NW1_ERS02 SAPInstance \
+ operations \$id=rsc_sap_NW1_ERS02-operations \
+ op monitor interval=11 timeout=60 on_fail=restart \
+ params InstanceName=NW1_ERS02_nw1-aers START_PROFILE="/sapmnt/NW1/profile/NW1_ERS02_nw1-aers" AUTOMATIC_RECOVER=false IS_ERS=true \
+ meta priority=1000
+
+ crm configure modgroup g-NW1_ASCS add rsc_sap_NW1_ASCS00
+ crm configure modgroup g-NW1_ERS add rsc_sap_NW1_ERS02
+
+ crm configure colocation col_sap_NW1_no_both -5000: g-NW1_ERS g-NW1_ASCS
+ crm configure location loc_sap_NW1_failover_to_ers rsc_sap_NW1_ASCS00 rule 2000: runs_ers_NW1 eq 1
+ crm configure order ord_sap_NW1_first_start_ascs Optional: rsc_sap_NW1_ASCS00:start rsc_sap_NW1_ERS02:stop symmetrical=false
+
+ crm node online nw1-cl-0
+ crm configure property maintenance-mode="false"
+fi
