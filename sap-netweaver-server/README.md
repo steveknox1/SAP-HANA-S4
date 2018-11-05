@@ -6,9 +6,9 @@ VM Name |Yes |Name of the first Netweaver Virtual Machine. | nwVm | No restricti
 VM Size |No |Defines the size of the Azure VM for the ASCS servers. | Standard_DS2_v2 |  "Standard_DS13_v2", "Standard_DS14_v2" | Only VM sizes specified.
 VNET Name |No |Name of the Azure VNET to be provisioned. Assumes existing VNET | ra-hana-vnet | No restrictions
 Subnet Name |No | Name of the subnet where the ASCS server will be provisioned. Assumes existing Subnet | appsubnet | No restrictions
-VM User Name | No | Username for both the HANA server and the HANA jumpbox | testuser | No restrictions
+VM User Name | No | Username for both the Netweaver servers | testuser | No restrictions
 VM Password | Yes | Password for the user defined above | None | No restrictions
-Operating System | No | Linux distribution to use for the HANA server | SLES 12 SP3 | Windows Server 2016 Datacenter, SLES 12 SP3, SLES 12 SP3 BYOS, SLES 12 SP2, SLES 12 SP2 BYOS
+Operating System | No | Linux distribution to use for the Netweaver server | SLES 12 SP3 | Windows Server 2016 Datacenter, SLES 12 SP3, SLES 12 SP3 BYOS, SLES 12 SP2, SLES 12 SP2 BYOS
 Existing Network Resource Group | No | This gives you the option to deploy the VMs to an existing VNET in a different Resource Group. The value provided should match the name of the existing Resource Group. To deploy the VNET in the same Resource Group the value should be set to "no" | no | No restrictions
 Fault Domain Max | No | Number of fault domains for the availability set | 2 | 1, 2, 3
 App Avail Set Name | No | Availability Set Name for the VMs | avset-nw | No
