@@ -3,7 +3,7 @@
     "contentVersion": "1.0.0.0",
     "parameters": {
         "vnetName": {
-            "defaultValue": "vnet",
+            "defaultValue": "ra-hana-vnet",
             "type": "string",
             "metadata": {
                 "description": "Name for the virtual network"
