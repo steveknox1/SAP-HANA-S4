@@ -23,7 +23,7 @@
             }
         },
         "vnetName": {
-            "defaultValue": "ra-hana-vnet",
+            "defaultValue": "vnet",
             "type": "string",
             "metadata": {
                 "description": "Virtual network name"

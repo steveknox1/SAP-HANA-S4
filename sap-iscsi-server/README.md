@@ -1,6 +1,7 @@
 # ISCSI Server
 ## Machine Info
-This template will deploy a Linux ISCSI server into your environment. The purpose of this is server is to enable the creation of ICSI targets to use as SBD devices for the cluster configuration of the different cluster. For this purpose, the Custom Script Extension will create three different ISCSI targets and two client IQNs per ISCSI target.
+T
+his template will deploy a Linux ISCSI server into your environment. The purpose of this is server is to enable the creation of ICSI targets to use as SBD devices for the cluster configuration of the different cluster. For this purpose, the Custom Script Extension will create three different ISCSI targets and two client IQNs per ISCSI target.
 
 #### Storage Configuration
 
@@ -22,7 +23,7 @@ VM Name |Yes |Name of the ISCSI Server | None | No restrictions
 Existing Network Resource Group | No | This gives you the option to deploy the VMs to an existing VNET in a different Resource Group. The value provided should match the name of the existing Resource Group. To deploy the VNET in the same Resource Group the value should be set to "no" | no | No restrictions
 VNET Name |No |Name of the Azure VNET which will be used for the VM | vnet | No restrictions
 Subnet Name |No | Name of the subnet where the ISCSI server will be provisioned | mgtsubnet | No restrictions
-VM User Name | No | Username for the iSCSI server | testuser | No restrictions
+VM User Name | No | Username for both the HANA server and the HANA jumpbox | testuser | No restrictions
 VM Password | Yes | Password for the user defined above | None | No restrictions
 OS Type | No | OS to use for the ISCSI Server | SLES 12 SP3 | "Windows Server 2016 Datacenter", "SLES 12 SP3",  "SLES 12 SP3 BYOS",  "SLES 12 SP2", "SLES 12 SP2 BYOS"
 Static IP | No | Allows you to choose the specific IP to be assgined to the ISCSI server. | 10.0.0.21 | No restrictions
