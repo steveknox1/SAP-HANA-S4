@@ -12,7 +12,7 @@ echo "creating netweaver cluster"
 az group deployment create \
 --name NetWeaver-Deployment \
 --resource-group "$rgname" \
-   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/Hana-Test-Deploy/master/sap-netweaver-server/azuredeploy-nw-infra.json" \
+   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-netweaver-server/azuredeploy-nw-infra.json" \
    --parameters \
    vmName="$NWVMNAME" \
    vmUserName="$vmusername" \

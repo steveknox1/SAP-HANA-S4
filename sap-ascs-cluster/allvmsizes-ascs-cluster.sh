@@ -42,14 +42,16 @@ DBHOST=${28}
 DBIP=${29}
 DBINSTANCE=${30}
 ASCSLBIP=${31}
-CONFIGURECRM=${32}
-CONFIGURESCHEMA=${33}
-SAPBITSMOUNT=${34} 
-SAPMNTMOUNT=${35}
-USRSAPSIDMOUNT=${36}
-SAPTRANSMOUNT=${37}
-USRSAPASCSMOUNT=${38}
-USRSAPERSMOUNT=${39}
+CONFIGURESAP=${32}
+CONFIGURECRM=${33}
+CONFIGURESCHEMA=${34}
+SAPBITSMOUNT=${35} 
+SAPMNTMOUNT=${36}
+USRSAPSIDMOUNT=${37}
+SAPTRANSMOUNT=${38}
+USRSAPASCSMOUNT=${39}
+USRSAPERSMOUNT=${40}
+SAPSOFTWARETODEPLOY=${41}
 
 ###
 # cluster tuning values
@@ -59,34 +61,46 @@ STONITHTIMEOUT="150s"
 #
 
 echo "small.sh receiving:"
-echo "USRNAME:" $USRNAME >> /tmp/variables.txt
-echo "ASCSPWD:" $ASCSPWD >> /tmp/variables.txt
-echo "VMNAME:" $VMNAME >> /tmp/variables.txt
-echo "OTHERVMNAME:" $OTHERVMNAME >> /tmp/variables.txt
-echo "VMIPADDR:" $VMIPADDR >> /tmp/variables.txt
-echo "OTHERIPADDR:" $OTHERIPADDR >> /tmp/variables.txt
-echo "ISPRIMARY:" $ISPRIMARY >> /tmp/variables.txt
-echo "REPOURI:" $REPOURI >> /tmp/variables.txt
-echo "ISCSIIP:" $ISCSIIP >> /tmp/variables.txt
-echo "IQN:" $IQN >> /tmp/variables.txt
-echo "IQNCLIENT:" $IQNCLIENT >> /tmp/variables.txt
-echo "LBIP:" $LBIP >> /tmp/variables.txt
-echo "SUBEMAIL:" $SUBEMAIL >> /tmp/variables.txt
-echo "SUBID:" $SUBID >> /tmp/variables.txt
-echo "SUBURL:" $SUBURL >> /tmp/variables.txt
-echo "NFSILBIP:" $NFSILBIP >> /tmp/variables.txt
-echo "ASCSSID" $ASCSSID >> /tmp/variables.txt
-echo "ASCSINSTANCE:" $ASCSINSTANCE >>/tmp/variables.txt
-echo "SAPINSTGID:" $SAPINSTGID >>/tmp/variables.txt
-echo "SAPSYSGID:" $SAPSYSGID >>/tmp/variables.txt
-echo "SAPADMUID:" $SAPADMUID >>/tmp/variables.txt
-echo "SIDADMUID:" $SIDADMUID >>/tmp/variables.txt
-echo "SAPPASSWD:" $SAPPASSWD >>/tmp/variables.txt
-echo "ERSINSTANCE:" $ERSINSTANCE >>/tmp/variables.txt
-echo "DBHOST:" $DBHOST >>/tmp/variables.txt
-echo "DBIP:" $DBIP >>/tmp/variables.txt
-echo "DBINSTANCE:" $DBINSTANCE >>/tmp/variables.txt
-echo "ASCSLBIP:" $ASCSLBIP >>/tmp/variables.txt
+echo "USRNAME: ${USRNAME}" >> /tmp/variables.txt
+echo "ASCSPWD: ${ASCSPWD}" >> /tmp/variables.txt
+echo "VMNAME: ${VMNAME}" >> /tmp/variables.txt
+echo "OTHERVMNAME: ${OTHERVMNAME}" >> /tmp/variables.txt
+echo "VMIPADDR: ${VMIPADDR}" >> /tmp/variables.txt
+echo "OTHERIPADDR: ${OTHERIPADDR}" >> /tmp/variables.txt
+echo "ISPRIMARY: ${ISPRIMARY}" >> /tmp/variables.txt
+echo "URI: ${URI}" >> /tmp/variables.txt
+echo "HANASID: ${HANASID}" >> /tmp/variables.txt
+echo "REPOURI: ${REPOURI}" >> /tmp/variables.txt
+echo "ISCSIIP: ${ISCSIIP}" >> /tmp/variables.txt
+echo "IQN: ${IQN}" >> /tmp/variables.txt
+echo "IQNCLIENT: ${IQNCLIENT}" >> /tmp/variables.txt
+echo "ASCSLBIP: ${ASCSLBIP}" >> /tmp/variables.txt
+echo "ERSLBIP: ${ERSLBIP}" >> /tmp/variables.txt
+echo "SUBEMAIL: ${SUBEMAIL}" >> /tmp/variables.txt
+echo "SUBID: ${SUBID}" >> /tmp/variables.txt
+echo "SUBURL: ${SUBURL}" >> /tmp/variables.txt
+echo "NFSILBIP: ${NFSILBIP}" >> /tmp/variables.txt
+echo "ASCSSID: ${ASCSSID}" >> /tmp/variables.txt
+echo "ASCSINSTANCE: ${ASCSINSTANCE}" >> /tmp/variables.txt
+echo "SAPINSTGID: ${SAPINSTGID}" >> /tmp/variables.txt
+echo "SAPSYSGID: ${SAPSYSGID}" >> /tmp/variables.txt
+echo "SAPADMUID: ${SAPADMUID}" >> /tmp/variables.txt
+echo "SIDADMUID: ${SIDADMUID}" >> /tmp/variables.txt
+echo "SAPPASSWD: ${SAPPASSWD}" >> /tmp/variables.txt
+echo "ERSINSTANCE: ${ERSINSTANCE}" >> /tmp/variables.txt
+echo "DBHOST: ${DBHOST}" >> /tmp/variables.txt
+echo "DBIP: ${DBIP}" >> /tmp/variables.txt
+echo "DBINSTANCE: ${DBINSTANCE}" >> /tmp/variables.txt
+echo "ASCSLBIP: ${ASCSLBIP}" >> /tmp/variables.txt
+echo "CONFIGURESAP: ${CONFIGURESAP}" >> /tmp/variables.txt
+echo "CONFIGURECRM: ${CONFIGURECRM}" >> /tmp/variables.txt
+echo "CONFIGURESCHEMA: ${CONFIGURESCHEMA}" >> /tmp/variables.txt
+echo "SAPBITSMOUNT: ${SAPBITSMOUNT}" >> /tmp/variables.txt
+echo "SAPMNTMOUNT: ${SAPMNTMOUNT}" >> /tmp/variables.txt
+echo "USRSAPSIDMOUNT: ${USRSAPSIDMOUNT}" >> /tmp/variables.txt
+echo "SAPTRANSMOUNT: ${SAPTRANSMOUNT}" >> /tmp/variables.txt
+echo "USRSAPASCSMOUNT: ${USRSAPASCSMOUNT}" >> /tmp/variables.txt
+echo "USRSAPERSMOUNT: ${USRSAPERSMOUNT}" >> /tmp/variables.txt
 
 retry() {
     local -r -i max_attempts="$1"; shift
@@ -391,7 +405,7 @@ NW_GetMasterPassword.masterPwd = $P_MASTERPASSWD
 NW_GetSidNoProfiles.sid = $P_ASCSSID
 NW_SAPCrypto.SAPCryptoFile = /sapbits/SAPEXE_200-80002573.SAR
 NW_SCS_Instance.instanceNumber = $P_ASCSINSTANCE
-NW_SCS_Instance.scsVirtualHostname = $P_VMNAME
+NW_SCS_Instance.scsVirtualHostname = ascsvh
 NW_Unpack.sapExeSar = /sapbits/SAPEXE_200-80002573.SAR
 NW_getFQDN.setFQDN = false
 archives.downloadBasket = /sapbits
@@ -434,7 +448,7 @@ nwUsers.sapsysGID = $P_SAPSYSGID
 nwUsers.sidAdmUID = $P_SIDADMUID
 nwUsers.sidadmPassword = $P_MASTERPASSWD
 nw_instance_ers.ersInstanceNumber = $P_ERSINSTANCE
-nw_instance_ers.ersVirtualHostname = $P_VMNAME
+nw_instance_ers.ersVirtualHostname = ersvh
 EOF
 chown root:sapinst $P_INIFILE
 chmod g+r $P_INIFILE
@@ -450,10 +464,11 @@ write_db_ini_file() {
   P_DBSID=${7}
   P_DBINSTANCE=${8}
 
+#we used to use SAPABAPDB for this, now SAPABAP1
   cat > $P_INIFILE <<EOF
-NW_HDB_DB.abapSchemaName = SAPABAPDB
+NW_HDB_DB.abapSchemaName = SAPABAP1
 NW_HDB_DB.abapSchemaPassword = $P_MASTERPASSWD
-NW_HDB_DB.javaSchemaName = SAPABAPDB
+NW_HDB_DB.javaSchemaName = SAPABAP1
 NW_HDB_DB.javaSchemaPassword = $P_MASTERPASSWD
 NW_ABAP_Import_Dialog.dbCodepage = 4103
 NW_ABAP_Import_Dialog.migmonJobNum = 12
@@ -492,11 +507,14 @@ exec_sapinst() {
   P_INIFILE=${2}
   P_PRODUCTID=${3}
   P_INSTUSER=${4}
+  P_INSTHOST=${5}
 
   echo "run sapinst"
   echo "P_SAPINSTFUNC:" $P_SAPINSTFUNC >> /tmp/variables.txt
   echo "P_INIFILE:" $P_INIFILE>> /tmp/variables.txt
   echo "P_PRODUCTID:" $P_PRODUCTID>> /tmp/variables.txt
+  echo "P_INSTUSER:" $P_INSTUSER>> /tmp/variables.txt
+  echo "P_INSTHOST:" $P_INSTHOST>> /tmp/variables.txt
 
   echo "running sapinst for $P_SAPINSTFUNC"
   SILENTDIR="/silent_$P_SAPINSTFUNC"
@@ -505,13 +523,27 @@ exec_sapinst() {
   chmod 775 $SILENTDIR    
   cd $SILENTDIR
 
+  if [ "${P_INSTHOST}" != "" ]; then
+    SAPINSTHOST="SAPINST_USE_HOSTNAME=$P_INSTHOST"
+  else
+    SAPINSTHOST=""
+  fi
+
 ##  sudo -u $P_INSTUSER bash << EOF
 ##  cd $SILENTDIR
 ##  /sapbits/SWPM10SP23_1/sapinst SAPINST_INPUT_PARAMETERS_URL=$P_INIFILE SAPINST_EXECUTE_PRODUCT_ID=$P_PRODUCTID SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false
 ## EOF
-  /sapbits/SWPM10SP23_1/sapinst SAPINST_INPUT_PARAMETERS_URL=$P_INIFILE SAPINST_EXECUTE_PRODUCT_ID=$P_PRODUCTID SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false
-
+  /sapbits/SWPM10SP23_1/sapinst SAPINST_INPUT_PARAMETERS_URL=$P_INIFILE SAPINST_EXECUTE_PRODUCT_ID=$P_PRODUCTID SAPINST_SKIP_DIALOGS=true SAPINST_START_GUISERVER=false $SAPINSTHOST
 }
+
+do_zypper_update() {
+  #this will update all packages but waagent and msrestazure
+  zypper -q list-updates | tail -n +3 | cut -d\| -f3  >/tmp/zypperlist
+  cat /tmp/zypperlist  | grep -v "python.*azure*" > /tmp/cleanlist
+  cat /tmp/cleanlist | awk '{$1=$1};1' >/tmp/cleanlist2
+  cat /tmp/cleanlist2 | xargs -L 1 -I '{}' zypper update -y '{}'
+}
+
 ##end of bash function definitions
 
 
@@ -522,7 +554,8 @@ VMSIZE=`curl -H Metadata:true "http://169.254.169.254/metadata/instance/compute/
 
 #install hana prereqs
 echo "installing packages"
-retry 5 "zypper update -y"
+do_zypper_update
+
 retry 5 "zypper install -y -l sle-ha-release fence-agents" 
 retry 5 "zypper install -y unrar"
 
@@ -536,25 +569,34 @@ cat /etc/waagent.conf | sed $sedcmd | sed $sedcmd2 > /etc/waagent.conf.new
 cp -f /etc/waagent.conf.new /etc/waagent.conf
 # we may be able to restart the waagent and get the swap configured immediately
 
-
+if [ "$ISPRIMARY" = "yes" ]; then
 cat >>/etc/hosts <<EOF
 $VMIPADDR $VMNAME
 $OTHERIPADDR $OTHERVMNAME
 $NFSILBIP nfsnfslb
+$VMIPADDR ascsvh
+$OTHERIPADDR ersvh
+$DBIP hanavh
+$DBIP $DBHOST
 EOF
-
-
+else
 cat >>/etc/hosts <<EOF
 $VMIPADDR $VMNAME
 $OTHERIPADDR $OTHERVMNAME
 $NFSILBIP nfsnfslb
+$OTHERIPADDR ascsvh
+$VMIPADDR ersvh
+$DBIP hanavh
+$DBIP $DBHOST
 EOF
-
+fi
 
 
 ##external dependency on sshpt
+    retry 5 "zypper --non-interactive --no-gpg-checks addrepo https://download.opensuse.org/repositories/openSUSE:/Tools/SLE_12_SP3/openSUSE:Tools.repo"
+    retry 5 "zypper --non-interactive --no-gpg-checks refresh"
     retry 5 "zypper install -y python-pip"
-    retry 5 "pip install sshpt"
+    retry 5 "pip install sshpt==1.3.11"
     #set up passwordless ssh on both sides
     cd ~/
     #rm -r -f .ssh
@@ -583,11 +625,9 @@ sed -i "/InitiatorName=/d" "/etc/iscsi/initiatorname.iscsi"
 echo "InitiatorName=$IQNCLIENT" >> /etc/iscsi/initiatorname.iscsi
 systemctl restart iscsid
 systemctl restart iscsi
-iscsiadm -m discovery --type=st --portal=$ISCSIIP
-
-
-iscsiadm -m node -T "$IQN" --login --portal=$ISCSIIP:3260
-iscsiadm -m node -p "$ISCSIIP":3260 --op=update --name=node.startup --value=automatic
+retry 5 "iscsiadm -m discovery --type=st --portal=$ISCSIIP"
+retry 5 "iscsiadm -m node -T "$IQN" --login --portal=$ISCSIIP:3260"
+retry 5 "iscsiadm -m node -p "$ISCSIIP":3260 --op=update --name=node.startup --value=automatic"
 
 sleep 10 
 echo "hana iscsi end" >> /tmp/parameter.txt
@@ -605,7 +645,7 @@ fi
 cd /etc/sysconfig
 cp -f /etc/sysconfig/sbd /etc/sysconfig/sbd.new
 
-sbdcmd="s#SBD_DEVICE=\"\"#SBD_DEVICE=\"$sbdid\"#g"
+sbdcmd="s#SBD_DEVICE=\"\"SBD_DEVICE=\"$sbdid\"#g"
 sbdcmd2='s/SBD_PACEMAKER=.*/SBD_PACEMAKER="yes"/g'
 sbdcmd3='s/SBD_STARTMODE=.*/SBD_STARTMODE="always"/g'
 cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > /etc/sysconfig/sbd.modified
@@ -675,14 +715,14 @@ chattr +i /usr/sap/${ASCSSID}/ERS${ERSINSTANCE}
 echo "/sapmnt/${ASCSSID} -nfsvers=4,nosymlink,sync ${SAPMNTMOUNT}" >> /etc/auto.direct
 echo "/usr/sap/trans -nfsvers=4,nosymlink,sync ${SAPTRANSMOUNT}" >> /etc/auto.direct
 echo "/usr/sap/${ASCSSID}/SYS -nfsvers=4,nosymlink,sync ${USRSAPSIDMOUNT}" >> /etc/auto.direct
-echo "/usr/sap/${ASCSSID}/ASCS00 -nfsvers=4,nosymlink,sync ${USRSAPASCSMOUNT}" >> /etc/auto.direct
-echo "/usr/sap/${ASCSSID}/ERS00 -nfsvers=4,nosymlink,sync ${USRSAPERSMOUNT}" >> /etc/auto.direct
+echo "/usr/sap/${ASCSSID}/ASCS${ASCSINSTANCE} -nfsvers=4,nosymlink,sync ${USRSAPASCSMOUNT}" >> /etc/auto.direct
+echo "/usr/sap/${ASCSSID}/ERS${ERSINSTANCE} -nfsvers=4,nosymlink,sync ${USRSAPERSMOUNT}" >> /etc/auto.direct
 
 systemctl enable autofs
 service autofs restart
 
 cd /sapbits
-download_sapbits $URI /sapbits
+
 touch /tmp/sapbitsdownloaded.txt
 create_temp_swapfile "/localstore/tempswap" 2000000
 
@@ -691,13 +731,23 @@ groupadd -g $SAPSYSGID sapsys
 usermod -a -G sapinst root
 usermod -a -G sapsys root
 
-echo  "10.0.0.22 hanailb"  >>/etc/hosts
+echo  "$DBIP $DBHOST"  >>/etc/hosts
 
 if [ "$ISPRIMARY" = "yes" ]; then
   #clean out the usr/sap/SID/SYS
-  rm -r -f /usr/sap/S40/SYS/exe/uc/linuxx86_64/*
-  write_ascs_ini_file "/tmp/ascs.params" "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME" "$ASCSSID" "$ASCSINSTANCE" "$SAPPASSWD" "$SAPADMUID" "$SAPSYSGID" "$SIDADMUID"
-  exec_sapinst "ascs" "/tmp/ascs.params" "NW_ABAP_ASCS:S4HANA1709.CORE.HDB.ABAPHA" root
+  rm -r -f /usr/sap/${ASCSSID}/SYS/exe/uc/linuxx86_64/*
+  if [ "${CONFIGURESAP}" = "yes" ]; then 
+    #determine the package to install
+    case "$SAPSOFTWARETODEPLOY" in
+      'S4 1709')
+      ;;
+      'IDES 1610"')
+      ;;
+    esac
+    download_sapbits $URI /sapbits $SAPSOFTWARETODEPLOY
+    write_ascs_ini_file "/tmp/ascs.params" "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME" "$ASCSSID" "$ASCSINSTANCE" "$SAPPASSWD" "$SAPADMUID" "$SAPSYSGID" "$SIDADMUID"
+    exec_sapinst "ascs" "/tmp/ascs.params" "NW_ABAP_ASCS:S4HANA1709.CORE.HDB.ABAPHA" root ascsvh
+  fi
   touch /tmp/ascscomplete.txt
 
 crm node online $VMNAME
@@ -708,7 +758,7 @@ crm configure primitive vip_${ASCSSID} IPaddr2 \
         op monitor interval="10s" timeout="20s" 
 
 crm configure primitive rsc_nc_${ASCSSID} anything \
-     params binfile="/usr/bin/nc" cmdline_options="-l -k 61000" \
+     params binfile="/usr/bin/nc" cmdline_options="-l -k 62000" \
      op monitor timeout=20s interval=10 depth=0
 
 # WARNING: Resources nc_NW1_ASCS,nc_NW1_ERS violate uniqueness for parameter "binfile": "/usr/bin/nc"
@@ -720,14 +770,18 @@ sudo crm configure group g-${ASCSSID}_ERS rsc_nc_${ASCSSID} vip_${ASCSSID}
   download_dbbits $URI /sapbits
   waitfor  root $P_OTHERVMNAME /tmp/erscomplete.txt
   sleep 10m
-  write_db_ini_file  "/tmp/db.params" "$ASCSSID" "$SAPPASSWD" "$SAPSYSGID" "$SIDADMUID" "$DBHOST" "$HANASID" "$DBINSTANCE"
-  if [ "$CONFIGURESCHEMA" = "yes" ]; then
-  exec_sapinst "db" "/tmp/db.params" "NW_ABAP_DB:S4HANA1709.CORE.HDB.ABAPHA" root
+  if [ "${CONFIGURESAP}" = "yes" ]; then 
+    write_db_ini_file  "/tmp/db.params" "$ASCSSID" "$SAPPASSWD" "$SAPSYSGID" "$SIDADMUID" "hanavh" "$HANASID" "$DBINSTANCE"
+    if [ "$CONFIGURESCHEMA" = "yes" ]; then
+    exec_sapinst "db" "/tmp/db.params" "NW_ABAP_DB:S4HANA1709.CORE.HDB.ABAPHA" root ascsvh
+    fi
   fi
 else
   waitfor  root $P_OTHERVMNAME /tmp/ascscomplete.txt
-  write_ers_ini_file "/tmp/ers.params" "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME" "$ASCSSID" "$ERSINSTANCE" "$SAPPASSWD" "$SAPADMUID" "$SAPSYSGID" "$SIDADMUID"
-  exec_sapinst "ers" "/tmp/ers.params" "NW_ERS:S4HANA1709.CORE.HDB.ABAPHA" root
+  if [ "${CONFIGURESAP}" = "yes" ]; then
+    write_ers_ini_file "/tmp/ers.params" "$ISPRIMARY" "$VMNAME" "$OTHERVMNAME" "$ASCSSID" "$ERSINSTANCE" "$SAPPASSWD" "$SAPADMUID" "$SAPSYSGID" "$SIDADMUID"
+    exec_sapinst "ers" "/tmp/ers.params" "NW_ERS:S4HANA1709.CORE.HDB.ABAPHA" root ersvh
+  fi
   touch /tmp/erscomplete.txt
 fi
 
@@ -760,17 +814,17 @@ crm configure  rsc_defaults \$id="rsc-options"  resource-stickiness="1000" migra
 crm configure  op_defaults \$id="op-options"  timeout="600"
 
  if [ "${CONFIGURECRM}" = "yes" ]; then
- crm configure primitive rsc_sap_${ASCSSID}_ASCS00 SAPInstance \
- operations \$id=rsc_sap_${ASCSSID}_ASCS00-operations \
+ crm configure primitive rsc_sap_${ASCSSID}_ASCS${ASCSINSTANCE} SAPInstance \
+ operations \$id=rsc_sap_${ASCSSID}_ASCS${ASCSINSTANCE}-operations \
  op monitor interval=11 timeout=60 on_fail=restart \
- params InstanceName=${ASCSSID}_ASCS00_nw1-ascs START_PROFILE="/sapmnt/${ASCSSID}/profile/${ASCSSID}_ASCS00_ascs1" \
+ params InstanceName=${ASCSSID}_ASCS${ASCSINSTANCE}_nw1-ascs START_PROFILE="/sapmnt/${ASCSSID}/profile/${ASCSSID}_ASCS00_ascs1" \
  AUTOMATIC_RECOVER=false \
  meta resource-stickiness=5000 failure-timeout=60 migration-threshold=1 priority=10
 
- crm configure primitive rsc_sap_${ASCSSID}_ERS02 SAPInstance \
- operations \$id=rsc_sap_${ASCSSID}_ERS02-operations \
+ crm configure primitive rsc_sap_${ASCSSID}_ERS${ERSINSTANCE} SAPInstance \
+ operations \$id=rsc_sap_${ASCSSID}_ERS${ERSINSTANCE}-operations \
  op monitor interval=11 timeout=60 on_fail=restart \
- params InstanceName=${ASCSSID}_ERS02_nw1-aers START_PROFILE="/sapmnt/${ASCSSID}/profile/${ASCSSID}_ERS00_ascs2" AUTOMATIC_RECOVER=false IS_ERS=true \
+ params InstanceName=${ASCSSID}_ERS${ERSINSTANCE}_nw1-aers START_PROFILE="/sapmnt/${ASCSSID}/profile/${ASCSSID}_ERS${ERSINSTANCE}_ascs2" AUTOMATIC_RECOVER=false IS_ERS=true \
  meta priority=1000
 
  crm configure modgroup g-${ASCSSID}_ASCS add rsc_sap_${ASCSSID}_ASCS00
@@ -778,7 +832,7 @@ crm configure  op_defaults \$id="op-options"  timeout="600"
 
  crm configure colocation col_sap_${ASCSSID}_no_both -5000: g-${ASCSSID}_ERS g-${ASCSSID}_ASCS
  crm configure location loc_sap_${ASCSSID}_failover_to_ers rsc_sap_${ASCSSID}_ASCS00 rule 2000: runs_ers_${ASCSSID} eq 1
- crm configure order ord_sap_${ASCSSID}_first_start_ascs Optional: rsc_sap_${ASCSSID}_ASCS00:start rsc_sap_${ASCSSID}_ERS00:stop symmetrical=false
+ crm configure order ord_sap_${ASCSSID}_first_start_ascs Optional: rsc_sap_${ASCSSID}_ASCS00:start rsc_sap_${ASCSSID}_ERS${ERSINSTANCE}:stop symmetrical=false
 fi
  crm node online ${ASCSSID}-cl-0
  crm configure property maintenance-mode="false"

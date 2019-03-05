@@ -166,7 +166,7 @@
         "subnetRef": "[parameters('HANASubnetRef')]",
         "OperatingSystemSpec": {
             "imagePublisher": "[if (contains(parameters('OperatingSystem'),'SLES'),'SUSE','RedHat')]",
-            "imageOffer": "[if (contains(parameters('OperatingSystem'),'SLES'),'SLES-SAP','RHEL-SAP-HANA')]",
+            "imageOffer": "[if (contains(parameters('OperatingSystem'),'SLES'),if (contains(parameters('SubscriptionEmail'),'@'),'SLES-SAP-BYOS','SLES-SAP'),'RHEL-SAP-HANA')]",
             "sku": "[if (contains(parameters('OperatingSystem'),'12 SP3'),'12-SP3',if (contains(parameters('OperatingSystem'),'12 SP2'),'12-SP2','7.2'))]"
         },
         "diskConfig": "[variables(concat('diskConfig_', parameters('vmSize')))]",
@@ -372,7 +372,7 @@
             }
         },
         {
-            "apiVersion": "2018-04-01",
+            "apiVersion": "2018-06-01",
             "type": "Microsoft.Compute/virtualMachines",
             "name": "[parameters('vmName1')]",
             "location": "[resourceGroup().location]",
@@ -399,9 +399,9 @@
                 },
                 "storageProfile": {
                     "imageReference": {
-                        "publisher": "[variables('OperatingSystemSpec').imagePublisher]",
-                        "imageOffer": "[if (contains(parameters('OperatingSystem'),'SLES'),if (contains(parameters('SubscriptionEmail'),'@'),'SLES-SAP-BYOS','SLES-SAP'),'RHEL-SAP-HANA')]",
-                        "sku": "[if (contains(parameters('OperatingSystem'),'12 SP3'),'12-SP3',if (contains(parameters('OperatingSystem'),'12 SP2'),'12-SP2','7.2'))]",            
+                        "publisher": "[if (contains(parameters('OperatingSystem'),'SLES'),'SUSE','RedHat')]",
+                        "offer": "[if (contains(parameters('OperatingSystem'),'SLES'),if (contains(parameters('SubscriptionEmail'),'@'),'SLES-SAP-BYOS','SLES-SAP'),'RHEL-SAP-HANA')]",
+                        "sku": "[if (contains(parameters('OperatingSystem'),'12 SP3'),'12-SP3',if (contains(parameters('OperatingSystem'),'12 SP2'),'12-SP2','7.2'))]",
                         "version": "latest"
                     },
                     "osDisk": {

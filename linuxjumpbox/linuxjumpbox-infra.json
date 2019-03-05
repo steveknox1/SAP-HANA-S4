@@ -20,13 +20,14 @@
             "type": "string"
         },
         "subnetName": {
-            "defaultValue": "subnet",
+            "defaultValue": "mgtsubnet",
             "type": "string"
         },
         "osType": {
             "type": "string",
             "allowedValues": [
-                "Windows Server 2016 Datacenter",
+                "SLES 15",
+                "SLES 15 BYOS",
                 "SLES 12 SP3",
                 "SLES 12 SP3 BYOS",
                 "SLES 12 SP2",
@@ -51,6 +52,7 @@
         },
         "StaticIP": {
             "type": "string",
+            "defaultValue": "10.0.2.7",            
             "metadata": {
                 "description": "static ip address for the virtual machine"
             }
@@ -74,7 +76,7 @@
             "metadata": {
                 "description": "Name of the Virtual Machine"
             },
-            "defaultValue": "sapbits"
+            "defaultValue": "linuxjumpbox"
         }
     },
     "variables": {
@@ -87,12 +89,12 @@
         "vNicName": "[concat(parameters('vmName'),'nic')]",
         "vhdStorageAccountName": "[uniqueString(resourceGroup().id, 'storage')]",
         "images": {
-            "Windows Server 2016 Datacenter": {
-                "sku": "2016-Datacenter",
-                "offer": "WindowsServer",
-                "publisher": "MicrosoftWindowsServer",
+            "SLES 15": {
+                "sku": "15",
+                "offer": "SLES-Priority",
+                "publisher": "SUSE",
                 "version": "latest",
-                "OSType": "Windows"
+                "OSType": "Linux"
             },
             "SLES 12 SP3": {
                 "sku": "12-SP3",
@@ -134,7 +136,9 @@
                 "scriptCall": "sh ntpserver.sh"
             }
         },
-        "scriptFolder": "."
+        "scriptFolder": ".",
+        "PublicIpAddressName":"ipcftsapbitspip",
+        "networkSecurityGroupName":"ipcftsapbitsnsg"
     },
     "resources": [
         {
@@ -142,7 +146,9 @@
             "type": "Microsoft.Network/networkInterfaces",
             "name": "[variables('vNicName')]",
             "location": "[resourceGroup().location]",
-            "dependsOn": [],
+            "dependsOn": [
+                "[concat('Microsoft.Network/publicIpAddresses/', variables('PublicIpAddressName'))]"
+            ],
             "properties": {
                 "ipConfigurations": [
                     {
@@ -152,10 +158,35 @@
                             "privateIPAddress": "[parameters('StaticIP')]",
                             "subnet": {
                                 "id": "[variables('subnetRef')]"
+                            },
+                            "publicIpAddress": {
+                                "id": "[resourceId(resourceGroup().name, 'Microsoft.Network/publicIpAddresses',variables('PublicIpAddressName'))]"
                             }
                         }
                     }
                 ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "name": "[variables('networkSecurityGroupName')]",
+            "apiVersion": "2018-08-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {
+            }
+        },
+        {
+            "type": "Microsoft.Network/publicIpAddresses",
+            "sku": {
+                "name": "basic"
+            },
+            "name": "[variables('PublicIpAddressName')]",
+            "apiVersion": "2018-08-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {
+                "publicIpAllocationMethod": "dynamic"
             }
         },
         {

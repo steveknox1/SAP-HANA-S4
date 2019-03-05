@@ -8,20 +8,21 @@ else
 fi
 
 
-echo "creating netweaver cluster"
+echo "creating additional application server"
 az group deployment create \
---name NetWeaver-Deployment \
+--name NetWeaver-aas-Deployment \
 --resource-group "$rgname" \
    --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-netweaver-server/azuredeploy-nw-infra.json" \
    --parameters \
-   vmName="$NWVMNAME" \
+   vmName="$AASVMNAME" \
    vmUserName="$vmusername" \
    vmPassword="$vmpassword" \
    vnetName="$vnetname" \
-   ExistingNetworkResourceGroup="$rgname" \
+   ExistingNetworkResourceGroup="$vnetrgname" \
    vmSize="Standard_DS2_v2" \
    osType="SLES 12 SP3" \
    appAvailSetName="nwavailset" \
-   StaticIP="$FIRSTNWIPADDR"
+   StaticIP="$AASIPADDR" \
+   subnetName="$appsubnetname"
 
-echo "netweaver cluster created"
+echo "additional application server created"

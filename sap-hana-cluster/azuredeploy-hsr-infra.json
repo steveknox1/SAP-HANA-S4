@@ -32,6 +32,7 @@
                 "Standard_M64ms (1.7 TB, Certified)",
                 "Standard_M128s (2 TB, Certified)",
                 "Standard_M128ms (3.8 TB, Certified)",
+                "Standard_E8s_v3 (64 GB)",                
                 "Standard_E16s_v3 (128 GB)",
                 "Standard_E32s_v3 (256 GB)",
                 "Standard_E64s_v3 (448 GB)"
@@ -39,7 +40,7 @@
         },
         "NetworkName": {
             "type": "string",
-            "defaultValue": "ra-sap-hana-vnet",
+            "defaultValue": "vnet",
             "metadata": {
                 "description": "The HANA VNET"
             }
@@ -108,8 +109,7 @@
             "type": "string",
             "metadata": {
                 "description": "Type in the name of the Resource Group for an existing network or leave no to use the same one"
-            },
-            "defaultValue": "yes"
+            }
         },
         "StaticIP1": {
             "type": "string",
@@ -201,6 +201,9 @@
             },
             "Standard_M128ms (3.8 TB, Certified)": {
                 "templateuri": "extralarge-hsr.json"
+            },
+            "Standard_E8s_v3 (64 GB)": {
+                "templateuri": "small-hsr.json"
             },
             "Standard_E16s_v3 (128 GB)": {
                 "templateuri": "small-hsr.json"

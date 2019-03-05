@@ -1,14 +1,21 @@
 #!/bin/bash
 
 echo "Reading config...." >&2
-source ./azuredeploy.cfg
+if [ "${1}" != "" ]; then
+    source ${1}
+else
+    source ./azuredeploy.cfg
+fi
+
+az account set --subscription "$subscriptionid"
 
 echo "installing hana software"
 az group deployment create \
 --name HANADeployment \
 --resource-group "$rgname" \
-   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/Hana-Test-Deploy/master/sap-hana-cluster/azuredeploy-hsr-sw.json" \
+   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-hana-cluster/azuredeploy-hsr-sw.json" \
    --parameters \
+   HanaVersion="SAP HANA PLATFORM EDITION 2.0 SPS03 REV30 (51053061)" \
    VMName1="$HANAVMNAME1" \
    VMName2="$HANAVMNAME2" \
    customURI="$customuri" \

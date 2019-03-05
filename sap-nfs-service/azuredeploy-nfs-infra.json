@@ -85,8 +85,7 @@
             "type": "string",
             "metadata": {
                 "description": "Type in the name of the Resource Group for an existing network or leave no to use the same one"
-            },
-            "defaultValue": "no"
+            }
         },
         "StaticIP1": {
             "type": "string",
@@ -115,7 +114,14 @@
                 "description": "IP Address for the internal load balancer"
             },
             "defaultValue": "10.0.1.10"
-        }
+        },
+        "DataDiskSize": {
+            "type": "int",
+            "metadata": {
+                "description": "size of the data disk"
+            },
+            "defaultValue": 255
+        }        
     },
     "variables": {
         "prefix": "[toLower(parameters('prefix'))]",
@@ -170,6 +176,26 @@
                 ],
                 "loadBalancingRules": [
                     {
+                        "name": "nfs-lb-111t",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/LoadBalancerFrontend')]"
+                            },
+                            "frontendPort": 111,
+                            "backendPort": 111,
+                            "enableFloatingIP": true,
+                            "idleTimeoutInMinutes": 30,
+                            "protocol": "Tcp",
+                            "loadDistribution": "Default",
+                            "disableOutboundSnat": false,
+                            "backendAddressPool": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName')), '/backendAddressPools/BackendPool1')]"
+                            },
+                            "probe": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/probes/lbprobe')]"
+                            }
+                        }
+                    },                   {
                         "name": "nfs-lb-2049t",
                         "properties": {
                             "frontendIPConfiguration": {
@@ -180,6 +206,27 @@
                             "enableFloatingIP": true,
                             "idleTimeoutInMinutes": 30,
                             "protocol": "Tcp",
+                            "loadDistribution": "Default",
+                            "disableOutboundSnat": false,
+                            "backendAddressPool": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers',variables('loadBalancerName')), '/backendAddressPools/BackendPool1')]"
+                            },
+                            "probe": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/probes/lbprobe')]"
+                            }
+                        }
+                    },
+                    {
+                        "name": "nfs-lb-111u",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/LoadBalancerFrontend')]"
+                            },
+                            "frontendPort": 111,
+                            "backendPort": 111,
+                            "enableFloatingIP": true,
+                            "idleTimeoutInMinutes": 30,
+                            "protocol": "Udp",
                             "loadDistribution": "Default",
                             "disableOutboundSnat": false,
                             "backendAddressPool": {
@@ -320,6 +367,9 @@
                         "value": {
                             "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('avSetNameDB'))]"
                         }
+                    },
+                    "DataDiskSize": {
+                        "value":  "[parameters('DataDiskSize')]"
                     }
                 }
             }
@@ -384,6 +434,9 @@
                         "value": {
                             "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('avSetNameDB'))]"
                         }
+                    },
+                    "DataDiskSize": {
+                        "value":  "[parameters('DataDiskSize')]"
                     }
                 }
             }

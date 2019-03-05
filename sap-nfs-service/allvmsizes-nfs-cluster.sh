@@ -269,13 +269,21 @@ cd ..
 
 }
 
+do_zypper_update() {
+  #this will update all packages but waagent and msrestazure
+  zypper -q list-updates | tail -n +3 | cut -d\| -f3  >/tmp/zypperlist
+  cat /tmp/zypperlist  | grep -v "python.*azure*" > /tmp/cleanlist
+  cat /tmp/cleanlist | awk '{$1=$1};1' >/tmp/cleanlist2
+  cat /tmp/cleanlist2 | xargs -L 1 -I '{}' zypper update -y '{}'
+}
+
+
 register_subscription  "$SUBEMAIL"  "$SUBID" "$SUBURL"
 
 #!/bin/bash
 echo "logicalvol start" >> /tmp/parameter.txt
-  nfslun="$(lsscsi 5 0 0 0 | grep -o '.\{9\}$')"
-  pvcreate $nfslun
-  vgcreate vg_NFS $nfslun 
+  pvcreate /dev/disk/azure/scsi1/lun0
+  vgcreate vg_NFS /dev/disk/azure/scsi1/lun0
   lvcreate -l 100%FREE -n lv_NFS vg_NFS 
 echo "logicalvol end" >> /tmp/parameter.txt
 
@@ -284,7 +292,8 @@ VMSIZE=`curl -H Metadata:true "http://169.254.169.254/metadata/instance/compute/
 
 #install hana prereqs
 echo "installing packages"
-zypper update -y
+do_zypper_update
+#zypper update -y
 retry 5 "zypper install -y -l sle-ha-release fence-agents drbd drbd-kmp-default drbd-utils"
 
 
@@ -305,8 +314,10 @@ EOF
 
 
 ##external dependency on sshpt
+    retry 5 "zypper --non-interactive --no-gpg-checks addrepo https://download.opensuse.org/repositories/openSUSE:/Tools/SLE_12_SP3/openSUSE:Tools.repo"
+    retry 5 "zypper --non-interactive --no-gpg-checks refresh"
     retry 5 "zypper install -y python-pip"
-    retry 5 "pip install sshpt"
+    retry 5 "pip install sshpt==1.3.11"
     #set up passwordless ssh on both sides
     cd ~/
     #rm -r -f .ssh
@@ -335,12 +346,10 @@ sed -i "/InitiatorName=/d" "/etc/iscsi/initiatorname.iscsi"
 echo "InitiatorName=$IQNCLIENT" >> /etc/iscsi/initiatorname.iscsi
 systemctl restart iscsid
 systemctl restart iscsi
-iscsiadm -m discovery --type=st --portal=$ISCSIIP
-
-
-iscsiadm -m node -T "$IQN" --login --portal=$ISCSIIP:3260
-iscsiadm -m node -p "$ISCSIIP":3260 --op=update --name=node.startup --value=automatic
-
+sleep 10
+retry 5 "iscsiadm -m discovery --type=st --portal=$ISCSIIP"
+retry 5 "iscsiadm -m node -T "$IQN" --login --portal=$ISCSIIP:3260"
+retry 5 "iscsiadm -m node -p "$ISCSIIP":3260 --op=update --name=node.startup --value=automatic"
 sleep 10 
 echo "hana iscsi end" >> /tmp/parameter.txt
 
@@ -357,7 +366,7 @@ fi
 cd /etc/sysconfig
 cp -f /etc/sysconfig/sbd /etc/sysconfig/sbd.new
 
-sbdcmd="s#SBD_DEVICE=\"\"#SBD_DEVICE=\"$sbdid\"#g"
+sbdcmd="s#SBD_DEVICE=\"\"SBD_DEVICE=\"$sbdid\"#g"
 sbdcmd2='s/SBD_PACEMAKER=.*/SBD_PACEMAKER="yes"/g'
 sbdcmd3='s/SBD_STARTMODE=.*/SBD_STARTMODE="always"/g'
 cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > /etc/sysconfig/sbd.modified
@@ -392,15 +401,25 @@ common {
         }
         options {
         }
-
-        disk {
-                resync-rate 50M;
-        }
-        net {
-                after-sb-0pri discard-younger-primary;
-                after-sb-1pri discard-secondary;
-                after-sb-2pri call-pri-lost-after-sb;
-        }
+     disk {
+          md-flushes yes;
+          disk-flushes yes;
+          c-plan-ahead 1;
+          c-min-rate 100M;
+          c-fill-target 20M;
+          c-max-rate 4G;
+     }
+     net {
+          after-sb-0pri discard-younger-primary;
+          after-sb-1pri discard-secondary;
+          after-sb-2pri call-pri-lost-after-sb;
+          protocol     C;
+          tcp-cork yes;
+          max-buffers 20000;
+          max-epoch-size 20000;
+          sndbuf-size 0;
+          rcvbuf-size 0;
+     }
 }
 EOF
 
@@ -411,7 +430,7 @@ cat >/etc/drbd.d/NWS-nfs.res <<EOF
 resource NWS-nfs {
    protocol     C;
    disk {
-      on-io-error       pass_on;
+      on-io-error       detach;
    }
    on $VMNAME {
       address   $VMIPADDR:7790;
@@ -430,30 +449,38 @@ EOF
 
 echo "Create NFS server and root share"
 echo "/srv/nfs/ *(rw,no_root_squash,fsid=0)">/etc/exports
-systemctl enable nfsserver
-service nfsserver restart
+#systemctl enable nfsserver
+#service nfsserver restart
 mkdir /srv/nfs/
 
 drbdadm create-md NWS-nfs
 drbdadm up NWS-nfs
 #drbdadm status
+###RWS
+waitfor root $OTHERVMNAME /tmp/drbdupsecond.txt	
 
-  drbdsetup wait-connect-resource NWS-nfs
+drbdadm new-current-uuid --clear-bitmap NWS-nfs
+drbdadm primary --force NWS-nfs
+drbdsetup wait-sync-resource NWS-nfs  
+
+#drbdadm -- --overwrite-data-of-peer primary NWS-nfs  
+#removing the wait-sync-resource for now.  this shouldn't impact the long-term health of the NFS server
+#
 #  drbdadm status
 
-  drbdadm new-current-uuid --clear-bitmap NWS-nfs
+
 #  drbdadm status
 
-  drbdadm -- --overwrite-data-of-peer --force primary NWS-nfs
+  #drbdadm -- --overwrite-data-of-peer --force primary NWS-nfs
   #drbdadm primary --force NWS_nfs
 #  drbdadm status
 
   echo "waiting for drbd sync"
-  drbdsetup wait-sync-resource NWS-nfs
+ # drbdsetup wait-sync-resource NWS-nfs
   sleep 1m
   mkfs.xfs /dev/drbd0
   echo "waiting for drbd sync"
-  drbdsetup wait-sync-resource NWS-nfs
+ # drbdsetup wait-sync-resource NWS-nfs
 
  
   mask=$(echo $LBIP | cut -d'/' -f 2)
@@ -473,8 +500,9 @@ drbdadm up NWS-nfs
   mkdir /srv/nfs/NWS/SapBits
   umount /srv/nfs/NWS
 
+  touch /tmp/drbdupprime.txt	
   echo "waiting for drbd sync"
-  drbdsetup wait-sync-resource NWS-nfs
+#  drbdsetup wait-sync-resource NWS-nfs
 
 fi
 #node2
@@ -484,7 +512,7 @@ cat >/etc/drbd.d/NWS-nfs.res <<EOL
 resource NWS-nfs {
    protocol     C;
    disk {
-      on-io-error       pass_on;
+      on-io-error       detach;
    }
    on $OTHERVMNAME {
       address   $OTHERIPADDR:7790;
@@ -503,12 +531,16 @@ EOL
 
 echo "Create NFS server and root share"
 echo "/srv/nfs/ *(rw,no_root_squash,fsid=0)">/etc/exports
-systemctl enable nfsserver
-service nfsserver restart
+#systemctl enable nfsserver
+#service nfsserver restart
+mkdir /srv/nfs/
 
 drbdadm create-md NWS-nfs
 drbdadm up NWS-nfs
 #drbdadm status
+
+touch /tmp/drbdupsecond.txt	
+waitfor root $OTHERVMNAME /tmp/drbdupprime.txt	
 
 echo "waiting for connection"
 
@@ -522,22 +554,22 @@ if [ "$ISPRIMARY" = "yes" ]; then
 
   crm configure property maintenance-mode=true
   
-crm configure delete stonith-sbd
+  crm configure delete stonith-sbd
 
-crm configure primitive stonith-sbd stonith:external/sbd \
+  crm configure primitive stonith-sbd stonith:external/sbd \
      params pcmk_delay_max="15" \
      op monitor interval="15" timeout="15"
 
-crm configure property stonith-timeout=$STONITHTIMEOUT
+  crm configure property stonith-timeout=$STONITHTIMEOUT
 
-crm configure property \$id="cib-bootstrap-options" stonith-enabled=true \
+  crm configure property \$id="cib-bootstrap-options" stonith-enabled=true \
                no-quorum-policy="ignore" \
                stonith-action="reboot" \
                stonith-timeout=$STONITHTIMEOUT
 
-crm configure  rsc_defaults \$id="rsc-options"  resource-stickiness="1000" migration-threshold="5000"
+  crm configure  rsc_defaults \$id="rsc-options"  resource-stickiness="1000" migration-threshold="5000"
 
-crm configure  op_defaults \$id="op-options"  timeout="600"
+  crm configure  op_defaults \$id="op-options"  timeout="600"
 
 #  crm node standby $OTHERVMNAME
 #  crm node standby $VMNAME
@@ -546,25 +578,20 @@ crm configure  op_defaults \$id="op-options"  timeout="600"
 #
   crm configure primitive drbd_NWS_nfs ocf:linbit:drbd params drbd_resource="NWS-nfs" op monitor interval="15" role="Master" op monitor interval="30" role="Slave"
   crm configure ms ms-drbd_NWS_nfs drbd_NWS_nfs meta master-max="1" master-node-max="1" clone-max="2" clone-node-max="1" notify="true" interleave="true"
-  crm configure primitive fs_NWS_sapmnt ocf:heartbeat:Filesystem params device=/dev/drbd0 directory=/srv/nfs/NWS fstype=xfs options="sync,dirsync" op monitor interval="10s"
+  crm configure primitive fs_NWS_sapmnt ocf:heartbeat:Filesystem params device=/dev/drbd0 directory=/srv/nfs/NWS fstype=xfs op monitor interval="10s"
 
-  crm configure primitive ex_NWS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS" options="rw,no_root_squash" clientspec="*" fsid=1 wait_for_leasetime_on_stop=true op monitor interval="30s"  
-  crm configure primitive ex_NWS_"$HANASID"sys ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/$HANASIDsys" options="rw,no_root_squash" clientspec="*" fsid=2 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive ex_NWS_sapmnt"$HANASID" ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/sapmnt$HANASID" options="rw,no_root_squash" clientspec="*" fsid=3 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive ex_NWS_trans ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/trans" options="rw,no_root_squash" clientspec="*" fsid=4 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive ex_NWS_ASCS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/ASCS" options="rw,no_root_squash" clientspec="*" fsid=5 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive ex_NWS_ASCSERS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/ASCSERS" options="rw,no_root_squash" clientspec="*" fsid=6 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive ex_NWS_SCS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SCS" options="rw,no_root_squash" clientspec="*" fsid=7 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  crm configure primitive ex_NWS_SCSERS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SCSERS" options="rw,no_root_squash" clientspec="*" fsid=8 wait_for_leasetime_on_stop=true op monitor interval="30s"
-  #crm configure primitive ex_NWS_SapBits ocf:heartbeat:exportfs params directory="/srv/nfs/NWS/SapBits" options="rw,no_root_squash" clientspec="*" fsid=9 wait_for_leasetime_on_stop=true op monitor interval="30s"
-    
+  crm configure primitive nfsserver systemd:nfs-server op monitor interval="30s"
+  crm configure clone cl-nfsserver nfsserver
+
+  crm configure primitive exportfs_NWS ocf:heartbeat:exportfs params directory="/srv/nfs/NWS" options="rw,no_root_squash,crossmnt" clientspec="*" fsid=1 wait_for_leasetime_on_stop=true op monitor interval="30s"  
+     
   lbprobe="61000"
   mask="24"
 
   crm configure primitive vip_NWS_nfs IPaddr2 params ip=$LBIP cidr_netmask=$mask op monitor interval=10 timeout=20
   crm configure primitive nc_NWS_nfs anything params binfile="/usr/bin/nc" cmdline_options="-l -k $lbprobe" op monitor timeout=20s interval=10 depth=0
 
-  crm configure group g-NWS_nfs fs_NWS_sapmnt ex_NWS ex_NWS_trans ex_NWS_ASCS ex_NWS_ASCSERS ex_NWS_SCS ex_NWS_SCSERS nc_NWS_nfs vip_NWS_nfs ex_NWS_sapmnt"$HANASID" ex_NWS_"$HANASID"sys
+  crm configure group g-NWS_nfs  fs_NWS_sapmnt exportfs_NWS nc_NWS_nfs vip_NWS_nfs
   crm configure order o-NWS_drbd_before_nfs inf: ms-drbd_NWS_nfs:promote g-NWS_nfs:start
   crm configure colocation col-NWS_nfs_on_drbd inf: g-NWS_nfs ms-drbd_NWS_nfs:Master
 

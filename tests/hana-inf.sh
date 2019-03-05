@@ -3,7 +3,13 @@
 #Standard_M128ms (3.8 TB, Certified)
 set -x
 echo "Reading config...." >&2
-source ./azuredeploy.cfg
+if [ "${1}" != "" ]; then
+    source ${1}
+else
+    source ./azuredeploy.cfg
+fi
+
+az account set --subscription "$subscriptionid"
 
 #hanavmsize="Standard_E16s_v3 (128 GB)"
 #hanavmsize="Standard_M128s (2 TB, Certified)"
@@ -12,7 +18,7 @@ echo "creating hana cluster"
 az group deployment create \
 --name HANADeployment \
 --resource-group $rgname \
-   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/Hana-Test-Deploy/master/sap-hana-cluster/azuredeploy-hsr-infra.json" \
+   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-hana-cluster/azuredeploy-hsr-infra.json" \
    --parameters \
    VMName1=$HANAVMNAME1 \
    VMName2=$HANAVMNAME2 \
@@ -22,7 +28,7 @@ az group deployment create \
    VMUserName=$vmusername \
    VMPassword=$vmpassword \
    OperatingSystem="SLES for SAP 12 SP3" \
-   ExistingNetworkResourceGroup="$rgname" \
+   ExistingNetworkResourceGroup="$vnetrgname" \
    StaticIP1=$HANAIP1 \
    StaticIP2=$HANAIP2 \
    iSCSIIP=$ISCSIIP \

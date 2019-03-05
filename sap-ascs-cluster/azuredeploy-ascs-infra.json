@@ -78,16 +78,16 @@
         },
         "vnetName": {
             "type": "string",
-            "defaultValue": "ra-sap-hana-vnet",
+            "defaultValue": "vnet",
             "metadata": {
                 "description": "The HANA VNET"
             }
         },
         "SubnetName": {
             "type": "string",
-            "defaultValue": "SAPDataSubnet",
+            "defaultValue": "appsubnet",
             "metadata": {
-                "description": "The data subnet name"
+                "description": "The application tier subnet name"
             }
         },
         "VMUserName": {
@@ -125,37 +125,37 @@
         "StaticIP1": {
             "type": "string",
             "metadata": {
-                "description": "IP Address for the first HANA VM when Static IP Allocation Method has been selected"
+                "description": "IP Address for the ASCS  VM when Static IP Allocation Method has been selected"
             },
-            "defaultValue": "10.0.5.4"
+            "defaultValue": "10.0.1.17"
         },
         "StaticIP2": {
             "type": "string",
             "metadata": {
-                "description": "IP Address for the firssecondt HANA VM when Static IP Allocation Method has been selected"
+                "description": "IP Address for the ERS VM when Static IP Allocation Method has been selected"
             },
-            "defaultValue": "10.0.5.5"
+            "defaultValue": "10.0.1.18"
         },
         "iSCSIIP": {
             "type": "string",
             "metadata": {
                 "description": "IP Address for the iscsi server"
             },
-            "defaultValue": "10.0.6.4"
+            "defaultValue": "10.0.2.6"
         },
         "ASCSLBIP": {
             "type": "string",
             "metadata": {
                 "description": "IP Address for the internal load balancer ASCS frontend"
             },
-            "defaultValue": "10.0.5.10"
+            "defaultValue": "10.0.1.20"
         },
         "ERSLBIP": {
             "type": "string",
             "metadata": {
                 "description": "IP Address for the internal load balancer ERS frontend"
             },
-            "defaultValue": "10.0.5.11"
+            "defaultValue": "10.0.1.21"
         },
         "ASCSINSTANCE": {
             "type": "string",
@@ -164,6 +164,13 @@
             },
             "defaultValue": "00"
         },        
+        "ERSINSTANCE": {
+            "type": "string",
+            "metadata": {
+                "description": "Instance number for the ERS install"
+            },
+            "defaultValue": "01"
+        },         
         "SubscriptionEmail": {
             "type": "string",
             "metadata": {
@@ -403,8 +410,8 @@
                             "frontendIPConfiguration": {
                                 "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/ERSFrontEnd')]"
                             },
-                            "frontendPort": "[concat('33', parameters('ASCSINSTANCE'))]",
-                            "backendPort": "[concat('33', parameters('ASCSINSTANCE'))]",
+                            "frontendPort": "[concat('33', parameters('ERSINSTANCE'))]",
+                            "backendPort": "[concat('33', parameters('ERSINSTANCE'))]",
                             "enableFloatingIP": true,
                             "idleTimeoutInMinutes": 30,
                             "protocol": "Tcp",
@@ -424,8 +431,8 @@
                             "frontendIPConfiguration": {
                                 "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/ERSFrontEnd')]"
                             },
-                            "frontendPort": "[concat('5', parameters('ASCSINSTANCE'),'13')]",
-                            "backendPort": "[concat('5', parameters('ASCSINSTANCE'),'13')]",
+                            "frontendPort": "[concat('5', parameters('ERSINSTANCE'),'13')]",
+                            "backendPort": "[concat('5', parameters('ERSINSTANCE'),'13')]",
                             "enableFloatingIP": true,
                             "idleTimeoutInMinutes": 30,
                             "protocol": "Tcp",
@@ -445,8 +452,8 @@
                             "frontendIPConfiguration": {
                                 "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/ERSFrontEnd')]"
                             },
-                            "frontendPort": "[concat('5', parameters('ASCSINSTANCE'),'14')]",
-                            "backendPort": "[concat('5', parameters('ASCSINSTANCE'),'14')]",
+                            "frontendPort": "[concat('5', parameters('ERSINSTANCE'),'14')]",
+                            "backendPort": "[concat('5', parameters('ERSINSTANCE'),'14')]",
                             "enableFloatingIP": true,
                             "idleTimeoutInMinutes": 30,
                             "protocol": "Tcp",
@@ -466,8 +473,8 @@
                             "frontendIPConfiguration": {
                                 "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('loadBalancerName')), '/frontendIpConfigurations/ERSFrontEnd')]"
                             },
-                            "frontendPort": "[concat('5', parameters('ASCSINSTANCE'),'16')]",
-                            "backendPort": "[concat('5', parameters('ASCSINSTANCE'),'16')]",
+                            "frontendPort": "[concat('5', parameters('ERSINSTANCE'),'16')]",
+                            "backendPort": "[concat('5', parameters('ERSINSTANCE'),'16')]",
                             "enableFloatingIP": true,
                             "idleTimeoutInMinutes": 30,
                             "protocol": "Tcp",
@@ -500,7 +507,7 @@
                     {
                         "properties": {
                             "protocol": "Tcp",
-                            "port":  "[concat('621', parameters('ASCSINSTANCE'))]",
+                            "port":  "[concat('621', parameters('ERSINSTANCE'))]",
                             "intervalInSeconds": 5,
                             "numberOfProbes": 2
                         },

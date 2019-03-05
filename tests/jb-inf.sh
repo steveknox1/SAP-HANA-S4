@@ -1,14 +1,19 @@
 #!/bin/bash
 
 echo "Reading config...." >&2
-source ./azuredeploy.cfg
+if [ "${1}" != "" ]; then
+    source ${1}
+else
+    source ./azuredeploy.cfg
+fi
+
 
 
 echo "creating jumpbox"
 az group deployment create \
 --name JumpboxDeployment \
 --resource-group $rgname \
---template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/Hana-Test-Deploy/master/Vms/hanajumpbox.json" \
+--template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/hanajumpbox/hanajumpbox.json" \
 --parameters vmName=hanajumpbox \
    vmUserName=$vmusername \
    StaticIP=$JBPIP \

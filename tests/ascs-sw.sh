@@ -1,13 +1,19 @@
 #!/bin/bash
 set -x
 echo "Reading config...." >&2
-source ./azuredeploy.cfg
+if [ "${1}" != "" ]; then
+    source ${1}
+else
+    source ./azuredeploy.cfg
+fi
+
+az account set --subscription "$subscriptionid"
 
 echo "installing ascs cluster"
 az group deployment create \
 --name ASCSSWDeployment \
 --resource-group $rgname \
-   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/Hana-Test-Deploy/master/sap-ascs-cluster/azuredeploy-ascs-sw.json" \
+   --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-ascs-cluster/azuredeploy-ascs-sw.json" \
    --parameters \
    VMName1=$ASCSVMNAME1 \
    VMName2=$ASCSVMNAME2 \
@@ -27,8 +33,9 @@ az group deployment create \
    DBHOST="hanailb" \
    DBIP="$HANAILBIP" \
    ASCSLBIP="$ASCSLBIP" \
+   CONFIGURESAP="yes" \
    CONFIGURECRM="no" \
-   CONFIGURESCHEMA="no" \
+   CONFIGURESCHEMA="yes" \
    SubscriptionEmail="$slesemail" \
    SubscriptionID="$slesreg" \
    SMTUri="$slessmt" \

@@ -14,14 +14,16 @@ az group deployment create \
 --resource-group "$rgname" \
    --template-uri "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-netweaver-server/azuredeploy-nw-infra.json" \
    --parameters \
-   vmName="$NWVMNAME" \
+   vmName="$PASVMNAME" \
    vmUserName="$vmusername" \
    vmPassword="$vmpassword" \
    vnetName="$vnetname" \
-   ExistingNetworkResourceGroup="$rgname" \
+   ExistingNetworkResourceGroup="$vnetrgname" \
    vmSize="Standard_DS2_v2" \
    osType="SLES 12 SP3" \
    appAvailSetName="nwavailset" \
-   StaticIP="$FIRSTNWIPADDR"
+   StaticIP="$PASIPADDR" \
+   subnetName="$appsubnetname" \
+   CONFIGURESAP="YES"
 
 echo "netweaver cluster created"

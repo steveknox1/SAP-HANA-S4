@@ -31,7 +31,7 @@ SUBEMAIL=${17}
 SUBID=${18}
 SUBURL=${19}
 NFSIP=${20}
-
+HANAVER=${21}
 ###
 # cluster tuning values
 WATCHDOGTIMEOUT="30"
@@ -253,10 +253,42 @@ setup_cluster() {
   fi
 }
 
+do_zypper_update() {
+  #this will update all packages but waagent and msrestazure
+  zypper -q list-updates | tail -n +3 | cut -d\| -f3  >/tmp/zypperlist
+  cat /tmp/zypperlist  | grep -v "python.*azure*" > /tmp/cleanlist
+  cat /tmp/cleanlist | awk '{$1=$1};1' >/tmp/cleanlist2
+  cat /tmp/cleanlist2 | xargs -L 1 -I '{}' zypper update -y '{}'
+}
+
 ##end of bash function definitions
 
 
 register_subscription "$SUBEMAIL"  "$SUBID" "$SUBURL"
+
+#decode hana version parameter
+HANAVER=${HANAVER^^}
+if [ "${HANAVER}" = "SAP HANA PLATFORM EDITION 2.0 SPS01 REV 10 (51052030)" ]
+then
+  hanapackage="51052030"
+else
+  echo "not 51052030"
+  if [ "$HANAVER" = "SAP HANA PLATFORM EDITION 2.0 SPS02 (51052325)" ]
+  then
+    hanapackage="51052325"
+  else
+  echo "not 51052325"
+    if [ "$HANAVER" = "SAP HANA PLATFORM EDITION 2.0 SPS03 REV30 (51053061)" ]
+    then
+      hanapackage="51053061"
+    else
+      echo "not 51053061, default to 51052325"
+      hanapackage="51052325"
+    fi
+  fi
+fi
+
+
 
 mkdir /etc/systemd/login.conf.d
 mkdir /hana
@@ -277,7 +309,7 @@ pvcreate -ff -y  /dev/disk/azure/scsi1/lun5
 pvcreate -ff -y  /dev/disk/azure/scsi1/lun6
 pvcreate -ff -y  /dev/disk/azure/scsi1/lun7
 
-if [ $VMSIZE == "Standard_E16s_v3" ] || [ "$VMSIZE" == "Standard_E32s_v3" ] || [ "$VMSIZE" == "Standard_E64s_v3" ] || [ "$VMSIZE" == "Standard_GS5" ] || [ "$VMSIZE" == "Standard_M32ts" ] || [ "$VMSIZE" == "Standard_M32ls" ] || [ "$VMSIZE" == "Standard_M64ls" ] || [ $VMSIZE == "Standard_DS14_v2" ] ; then
+if [ $VMSIZE == "Standard_E8s_v3" ] || [ $VMSIZE == "Standard_E16s_v3" ] || [ "$VMSIZE" == "Standard_E32s_v3" ] || [ "$VMSIZE" == "Standard_E64s_v3" ] || [ "$VMSIZE" == "Standard_GS5" ] || [ "$VMSIZE" == "Standard_M32ts" ] || [ "$VMSIZE" == "Standard_M32ls" ] || [ "$VMSIZE" == "Standard_M64ls" ] || [ $VMSIZE == "Standard_DS14_v2" ] ; then
 echo "logicalvols start" >> /tmp/parameter.txt
 #shared volume creation
   sharedvglun="/dev/disk/azure/scsi1/lun0"
@@ -500,14 +532,24 @@ fi
 
 
 if [ "$NFSIP" != "" ]; then
-mkdir /sapbits
-mount -t nfs4 nfsnfslb:/NWS/SapBits /sapbits
-echo "nfsnfslb:/NWS/SapBits /sapbits nfs4 defaults 0 0" >> /etc/fstab
-SAPBITSDIR="/sapbits"
+  mkdir /sapbits
+  mount -t nfs4 nfsnfslb:/NWS/SapBits /sapbits
+  RESULT=$?
+  ##if the mount of sapbits fails, use the local volume instead.
+  ##
+  if [ "$RESULT" != "0" ]; then
+    mkdir /hana/data/sapbits
+    SAPBITSDIR="/hana/data/sapbits"
+    ln -s  /hana/data/sapbits /sapbits
+    NFSIP=""
+  else
+    echo "nfsnfslb:/NWS/SapBits /sapbits nfs4 defaults 0 0" >> /etc/fstab
+    SAPBITSDIR="/sapbits"
+  fi
 else
   mkdir /hana/data/sapbits
   SAPBITSDIR="/hana/data/sapbits"
-  ln -s /sapbits /hana/data/sapbits
+  ln -s  /hana/data/sapbits /sapbits
 fi
 
 #install hana prereqs
@@ -537,10 +579,10 @@ cp -f /etc/waagent.conf.new /etc/waagent.conf
 #!/bin/bash
 cd $SAPBITSDIR
 echo "hana download start" >> /tmp/parameter.txt
-download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part1.exe"
-download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part2.rar"  
-download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part3.rar"  
-download_if_needed $SAPBITSDIR "$URI/SapBits" "51052325_part4.rar"  
+download_if_needed $SAPBITSDIR "$URI/SapBits" "${hanapackage}_part1.exe"
+download_if_needed $SAPBITSDIR "$URI/SapBits" "${hanapackage}_part2.rar"  
+download_if_needed $SAPBITSDIR "$URI/SapBits" "${hanapackage}_part3.rar"  
+download_if_needed $SAPBITSDIR "$URI/SapBits" "${hanapackage}_part4.rar"  
 
 #retrieve config file.  first try on download location, then go to our repo
 /usr/bin/wget --quiet $URI/SapBits/hdbinst.cfg
@@ -558,7 +600,7 @@ cd $SAPBITSDIR
 echo "hana unrar start" >> /tmp/parameter.txt
 #!/bin/bash
 cd $SAPBITSDIR
-unrar  -o- x 51052325_part1.exe
+unrar  -o- x ${hanapackage}_part1.exe
 echo "hana unrar end" >> /tmp/parameter.txt
 echo "hana prepare start" >> /tmp/parameter.txt
 cd $SAPBITSDIR
@@ -568,9 +610,9 @@ cd $SAPBITSDIR
 myhost=`hostname`
 sedcmd="s/REPLACE-WITH-HOSTNAME/$myhost/g"
 if [ "$NFSIP" != "" ]; then
- sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/sapbits\/51052325/g"
+ sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/sapbits\/${hanapackage}/g"
 else
- sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/hana\/data\/sapbits\/51052325/g"
+ sedcmd2="s/\/hana\/shared\/sapbits\/51052325/\/hana\/data\/sapbits\/${hanapackage}/g"
 fi
 
 sedcmd3="s/root_user=root/root_user=$HANAUSR/g"
@@ -586,14 +628,16 @@ echo "hana preapre end" >> /tmp/parameter.txt
 
 #!/bin/bash
 echo "install hana start" >> /tmp/parameter.txt
-cd $SAPBITSDIR/51052325/DATA_UNITS/HDB_LCM_LINUX_X86_64
-$SAPBITSDIR/51052325/DATA_UNITS/HDB_LCM_LINUX_X86_64/hdblcm -b --configfile ${hdbinstfile}
+cd $SAPBITSDIR/${hanapackage}/DATA_UNITS/HDB_LCM_LINUX_X86_64
+$SAPBITSDIR/${hanapackage}/DATA_UNITS/HDB_LCM_LINUX_X86_64/hdblcm -b --configfile ${hdbinstfile}
 echo "install hana end" >> /tmp/parameter.txt
 echo "install hana end" >> /tmp/hanacomplete.txt
 
 ##external dependency on sshpt
+    retry 5 "zypper --non-interactive --no-gpg-checks addrepo https://download.opensuse.org/repositories/openSUSE:/Tools/SLE_12_SP3/openSUSE:Tools.repo"
+    retry 5 "zypper --non-interactive --no-gpg-checks refresh"
     retry 5 "zypper install -y python-pip"
-    retry 5 "pip install sshpt"
+    retry 5 "pip install sshpt==1.3.11"
     #set up passwordless ssh on both sides
     cd ~/
     #rm -r -f .ssh
@@ -686,11 +730,10 @@ sed -i "/InitiatorName=/d" "/etc/iscsi/initiatorname.iscsi"
 echo "InitiatorName=$IQNCLIENT" >> /etc/iscsi/initiatorname.iscsi
 systemctl restart iscsid
 systemctl restart iscsi
-iscsiadm -m discovery --type=st --portal=$ISCSIIP
+retry 5 "iscsiadm -m discovery --type=st --portal=$ISCSIIP"
 
-
-iscsiadm -m node -T $IQN --login --portal=$ISCSIIP:3260
-iscsiadm -m node -p $ISCSIIP:3260 --op=update --name=node.startup --value=automatic
+retry 5 "iscsiadm -m node -T $IQN --login --portal=$ISCSIIP:3260"
+retry 5 "iscsiadm -m node -p $ISCSIIP:3260 --op=update --name=node.startup --value=automatic"
 
 #node1
 if [ "$ISPRIMARY" = "yes" ]; then
@@ -716,7 +759,7 @@ device="$(lsscsi 6 0 0 0| cut -c59-)"
 diskid="$(ls -l /dev/disk/by-id/scsi-* | grep $device)"
 sbdid="$(echo $diskid | grep -o -P '/dev/disk/by-id/scsi-3.{32}')"
 
-sbdcmd="s#SBD_DEVICE=\"\"#SBD_DEVICE=\"$sbdid\"#g"
+sbdcmd="s#SBD_DEVICE=\"\"SBD_DEVICE=\"$sbdid\"#g"
 sbdcmd2='s/SBD_PACEMAKER=.*/SBD_PACEMAKER="yes"/g'
 sbdcmd3='s/SBD_STARTMODE=.*/SBD_STARTMODE="always"/g'
 cat sbd.new | sed $sbdcmd | sed $sbdcmd2 | sed $sbdcmd3 > /etc/sysconfig/sbd.modified
