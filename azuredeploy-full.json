@@ -166,7 +166,7 @@
             "properties": {
                 "mode": "Incremental",
                 "templateLink": {
-                    "uri": "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/vnet.json"
+                    "uri": "https://raw.githubusercontent.com/steveknox1/SAP-HANA-S4/master/vnet.json"
                 },
                 "parameters": {
                     "vnetName": {
@@ -208,7 +208,7 @@
             "properties": {
                 "mode": "Incremental",
                 "templateLink": {
-                    "uri": "https://raw.githubusercontent.com/AzureCAT-GSI/SAP-HANA-S4/master/sap-iscsi-server/iscsiserver-infra.json"
+                    "uri": "https://raw.githubusercontent.com/steveknox1/SAP-HANA-S4/master/sap-iscsi-server/iscsiserver-infra.json"
                 },
                 "parameters": {
                     "vnetName": {
